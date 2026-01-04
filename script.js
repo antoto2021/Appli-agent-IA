@@ -113,7 +113,7 @@ const AIService = {
 
 const SystemService = {
     GITHUB_USER: 'antoto2021', // À adapter si besoin
-    GITHUB_REPO: 'agent-IA', // Nom fictif pour l'exemple
+    GITHUB_REPO: 'Appli-agent-IA', // Nom fictif pour l'exemple
     
     // Check GitHub Hash (Style Green Codex)
     async checkGitHubVersion() {
