@@ -1,54 +1,29 @@
-/* --- BASE --- */
-body { font-family: 'Inter', system-ui, sans-serif; background-color: #0b1121; color: #e2e8f0; }
+/* --- Base --- */
+body { font-family: 'Inter', sans-serif; background-color: #0b1121; color: #e2e8f0; }
 
-/* --- SCROLLBAR --- */
+/* --- Scrollbar --- */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #1e293b; }
-::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 3px; }
 
-/* --- COMPONENTS --- */
-.btn-icon { 
-    width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    color: #94a3b8; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); cursor: pointer;
-}
-.btn-icon:hover { background: rgba(255,255,255,0.1); color: white; transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
-.btn-icon:active { transform: scale(0.95); }
+/* --- Messages & Chat --- */
+.glass-message { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.05); }
+.user-message { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); }
 
-/* --- ANIMATIONS --- */
-.spin-once { animation: spin 0.8s ease-in-out; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-.fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
-@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+/* --- Animations --- */
+.fade-in { animation: fadeIn 0.3s ease-out forwards; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
 .typing-dot { animation: typing 1.4s infinite ease-in-out both; }
 .typing-dot:nth-child(1) { animation-delay: -0.32s; }
 .typing-dot:nth-child(2) { animation-delay: -0.16s; }
 @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 
-/* --- UI ELEMENTS --- */
-.glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3); }
-.message-ai { background: rgba(30, 41, 59, 0.6); border-left: 3px solid #6366f1; }
-.message-user { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.2); }
+/* --- Console Logs (Settings) --- */
+.console-line { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
 
-/* --- CONSOLE LOG --- */
-.console-log { font-family: 'JetBrains Mono', monospace; font-size: 10px; line-height: 1.4; }
-.console-success { color: #4ade80; }
-.console-error { color: #f87171; }
-.console-wait { color: #fbbf24; }
-
-/* --- INFO CARDS (Green Codex Style) --- */
-.info-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; }
-.info-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 700; margin-bottom: 4px; }
-.info-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #e2e8f0; }
-
-/* --- MODALS --- */
-.modal-overlay { background-color: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 100; animation: fadeIn 0.2s; }
-.modal-content { animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-@keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-/* --- MARKDOWN --- */
-.prose code { color: #a5b4fc; font-family: 'JetBrains Mono', monospace; background: rgba(0,0,0,0.3); padding: 2px 4px; rounded: 4px; font-size: 0.85em; }
-.prose pre { background: #020617 !important; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; border: 1px solid #1e293b; }
+/* --- Markdown Styles --- */
+.prose code { color: #a5b4fc; font-family: 'JetBrains Mono', monospace; background: rgba(0,0,0,0.3); padding: 2px 4px; rounded: 4px; font-size: 0.9em; }
+.prose p { margin-bottom: 0.5rem; }
+.prose ul { list-style-type: disc; padding-left: 1.2rem; margin-bottom: 0.5rem; }
+.prose strong { color: white; font-weight: 700; }
