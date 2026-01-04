@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nexus-agent-v5.4-final';
+const CACHE_NAME = 'nexus-agent-v6.2-final';
 const ASSETS = [
     './',
     './index.html',
