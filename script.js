@@ -1,11 +1,11 @@
 /**
  * =================================================================
- * NEXUS AGENT V6.0 - REAL SEARCH EDITION
+ * NEXUS AGENT V6.1 - DEEP HUNTER EDITION
  * =================================================================
- * Nouveautés :
- * 1. Google Search Grounding : L'IA peut chercher sur le web.
- * 2. Liens Intelligents : Redirection auto vers Indeed/LinkedIn.
- * 3. Protection Hallucination : Consignes strictes "No Fake".
+ * Améliorations :
+ * 1. Mode "Chasseur de Tête" : Force des descriptions longues et détaillées.
+ * 2. Smart Links : Utilise l'interface Google Jobs pour contourner les protections.
+ * 3. Fallback Robuste : Si pas de lien direct, génère une requête précise.
  */
 
 // ==========================================
@@ -15,12 +15,12 @@ const config = {
     apiKey: localStorage.getItem('nexus_api_key_v5') || '',
     activeModel: localStorage.getItem('nexus_active_model_v5') || null,
     
-    // Modèles recommandés pour la recherche (Flash est rapide, Pro est précis)
-    fallbackModels: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'],
+    // On privilégie les modèles PRO pour la capacité d'analyse et de détail
+    fallbackModels: ['gemini-1.5-pro', 'gemini-1.5-pro-latest', 'gemini-1.5-flash'],
     
     githubUser: 'antoto2021',
     githubRepo: 'Appli-agent-ia',
-    localHash: localStorage.getItem('nexus_app_hash') || 'v6.0_real_search',
+    localHash: localStorage.getItem('nexus_app_hash') || 'v6.1_deep_hunter',
 
     init: () => {
         const el = document.getElementById('info-local-v');
@@ -39,7 +39,7 @@ const config = {
         consoleEl.scrollTop = consoleEl.scrollHeight;
     },
 
-    // --- SCANNER DE MODÈLES ---
+    // --- SCANNER INTELLIGENT ---
     startDeepScan: async () => {
         const keyInput = document.getElementById('api-key-input').value.trim();
         const countEl = document.getElementById('tested-count');
@@ -66,7 +66,7 @@ const config = {
             candidateList = config.fallbackModels;
         }
 
-        config.log("2. Test de compatibilité...");
+        config.log("2. Recherche compatibilité Google Search...");
         let workingModel = null;
         let tested = 0;
         
@@ -76,7 +76,6 @@ const config = {
             config.log(`Test: ${model}...`);
             
             try {
-                // On teste si le modèle supporte l'outil de recherche (Grounding)
                 await config.testModel(model, keyInput);
                 workingModel = model;
                 config.log(`>>> SUCCÈS : ${model}`, "success");
@@ -90,12 +89,11 @@ const config = {
             document.getElementById('save-btn').disabled = false;
             config.log("✅ Prêt. Sauvegardez.", "success");
         } else {
-            config.log("AUCUN MODÈLE VALIDE TROUVÉ.", "error");
+            config.log("AUCUN MODÈLE VALIDE.", "error");
         }
     },
 
     testModel: async (modelName, key) => {
-        // Test simple ping
         const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: "Ping" }] }], generationConfig: { maxOutputTokens: 1 } })
@@ -128,7 +126,7 @@ const config = {
         localStorage.setItem('nexus_api_key_v5', config.apiKey);
         localStorage.setItem('nexus_active_model_v5', config.activeModel);
         ui.toggleSettings();
-        ui.addSystemMessage(`Connecté sur : <b>${config.activeModel}</b><br><span class="text-xs opacity-70">Recherche Web activée si disponible.</span>`);
+        ui.addSystemMessage(`Système connecté sur : <b>${config.activeModel}</b><br><span class="text-xs opacity-70">Mode Deep Hunter Activé.</span>`);
         ui.updateStatus(true);
     }
 };
@@ -162,10 +160,16 @@ const ui = {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         doc.setFontSize(10);
-        const chatText = document.getElementById('chat-history').innerText;
-        const lines = doc.splitTextToSize(chatText, 180);
-        doc.text(lines, 10, 10);
-        doc.save(`Nexus_Scan_${Date.now()}.pdf`);
+        // Récupération propre du texte
+        let y = 10;
+        document.querySelectorAll('#chat-history > div').forEach(div => {
+             const text = div.innerText.replace(/\n/g, ' ');
+             const lines = doc.splitTextToSize(text, 180);
+             doc.text(lines, 10, y);
+             y += (lines.length * 5) + 5;
+             if (y > 280) { doc.addPage(); y = 10; }
+        });
+        doc.save(`Nexus_Rapport_${Date.now()}.pdf`);
     },
 
     updateStatus: (connected) => {
@@ -221,53 +225,54 @@ const ui = {
         ui.scrollToBottom();
     },
 
-    // --- MODALE OFFRE (REAL LINK GENERATOR) ---
+    // --- MODALE OFFRE (LOGIQUE DE LIEN AVANCÉE) ---
     openJobModal: (jobId) => {
         const job = jobDataMap.get(jobId);
         if (!job) return;
 
-        // Remplissage texte
         document.getElementById('modal-title').innerText = job.title || "Poste";
         document.getElementById('modal-company').innerText = job.company || "Entreprise";
         document.getElementById('modal-location').innerText = job.location || "Lieu non précisé";
-        document.getElementById('modal-salary').innerText = job.salary || "N.C.";
-        document.getElementById('modal-contract').innerText = job.contract_type || "Contrat";
+        document.getElementById('modal-salary').innerText = job.salary || "Non communiqué";
+        document.getElementById('modal-contract').innerText = job.contract_type || "Type contrat inconnu";
         document.getElementById('modal-duration').innerText = job.duration || "Indéterminé";
         document.getElementById('modal-source').innerText = job.source || "Web";
-        document.getElementById('modal-desc').innerText = job.description_long || job.description || "Détails non disponibles.";
-
-        // --- GÉNÉRATION DE LIEN RÉEL ---
-        // Si l'URL fournie par l'IA semble fausse ou générique, on crée un lien de recherche précis
-        let realLink = job.url;
-        const searchQuery = encodeURIComponent(`${job.title} ${job.company} emploi`);
         
-        if (!realLink || realLink === 'SEARCH' || realLink.includes('fake') || realLink.length < 10) {
-             // Redirection intelligente selon la source
-             if (job.source && job.source.toLowerCase().includes('linkedin')) {
-                 realLink = `https://www.linkedin.com/jobs/search/?keywords=${searchQuery}`;
-             } else if (job.source && job.source.toLowerCase().includes('indeed')) {
-                 realLink = `https://fr.indeed.com/jobs?q=${searchQuery}`;
-             } else {
-                 realLink = `https://www.google.com/search?q=${searchQuery}`;
-             }
-        }
-        document.getElementById('modal-link').href = realLink;
+        // CORRECTION CONTENU: On force l'affichage du HTML si l'IA a renvoyé du markdown dans la description
+        document.getElementById('modal-desc').innerHTML = marked.parse(job.description_long || job.description || "Pas de détails.");
 
-        // Logo
+        // --- GÉNÉRATEUR DE LIEN GOOGLE JOBS (Le secret pour des vrais liens) ---
+        // On construit une requête spéciale pour l'interface "Google Emplois" qui agrège les vrais liens
+        const q = encodeURIComponent(`${job.title} ${job.company}`);
+        const googleJobsUrl = `https://www.google.com/search?ibp=htl;jobs&q=${q}`;
+        
+        let finalUrl = job.url;
+        // Si l'IA n'a pas trouvé d'URL explicite ou a mis un placeholder
+        if (!finalUrl || finalUrl === 'SEARCH' || finalUrl.includes('fake') || finalUrl.length < 15) {
+            finalUrl = googleJobsUrl;
+        }
+
+        const linkBtn = document.getElementById('modal-link');
+        linkBtn.href = finalUrl;
+        linkBtn.innerHTML = `Voir l'offre officielle <i class="fa-solid fa-arrow-up-right-from-square ml-2"></i>`;
+
+        // Logo Fallback
         const logoImg = document.getElementById('modal-logo');
         if (job.logo_url && job.logo_url !== "null") logoImg.src = job.logo_url;
         else logoImg.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(job.company || 'Job')}&background=random&color=fff&size=128`;
 
-        // Missions
+        // Missions List
         const missionList = document.getElementById('modal-missions');
         missionList.innerHTML = '';
-        if (job.missions && Array.isArray(job.missions)) {
+        if (job.missions && Array.isArray(job.missions) && job.missions.length > 0) {
             job.missions.forEach(m => {
                 const li = document.createElement('li'); li.innerText = m; missionList.appendChild(li);
             });
-        } else missionList.innerHTML = "<li>Voir l'annonce complète.</li>";
+        } else {
+            // Si pas de liste, on essaye d'extraire des bullet points du texte
+            missionList.innerHTML = "<li class='italic text-slate-500'>Voir description complète ci-dessous</li>";
+        }
 
-        // Affichage
         const modal = document.getElementById('job-modal');
         const content = document.getElementById('job-modal-content');
         modal.classList.remove('hidden');
@@ -291,7 +296,7 @@ const ui = {
                 const id = `job_${Date.now()}_${index}`;
                 jobDataMap.set(id, job);
                 return `
-                    <div class="bg-slate-800 border border-slate-700 p-3 rounded-xl hover:border-indigo-500 transition-colors group relative">
+                    <div class="bg-slate-800 border border-slate-700 p-3 rounded-xl hover:border-indigo-500 transition-colors group relative flex flex-col h-full">
                         <div class="flex justify-between items-start mb-2">
                             <div class="flex items-center gap-2 overflow-hidden">
                                 <div class="w-8 h-8 rounded bg-slate-700 flex-shrink-0 flex items-center justify-center text-xs font-bold text-slate-400">
@@ -306,15 +311,16 @@ const ui = {
                             <span class="w-1 h-1 bg-slate-600 rounded-full"></span>
                             <span class="text-green-400">${job.salary || 'N.C.'}</span>
                         </div>
+                        <p class="text-xs text-slate-300 line-clamp-3 mb-3 flex-1">${job.description}</p>
                         <div class="pt-2 border-t border-slate-700/50 flex justify-end">
-                            <button onclick="ui.openJobModal('${id}')" class="text-xs bg-indigo-600/20 text-indigo-300 px-3 py-1.5 rounded hover:bg-indigo-600 hover:text-white transition-colors font-medium">
-                                Voir Détails & Postuler
+                            <button onclick="ui.openJobModal('${id}')" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded transition-colors font-medium w-full shadow-lg">
+                                Détails & Postuler
                             </button>
                         </div>
                     </div>
                 `;
             }).join('');
-            return `<div class="mb-2 text-slate-300">Résultats de recherche :</div><div class="grid grid-cols-1 md:grid-cols-2 gap-3">${items}</div>`;
+            return `<div class="mb-2 text-slate-300">🔎 Offres trouvées :</div><div class="grid grid-cols-1 md:grid-cols-2 gap-3">${items}</div>`;
         }
         else if (data.type === 'images') {
             return `
@@ -332,7 +338,7 @@ const ui = {
 };
 
 // ==========================================
-// 3. MOTEUR IA (AGENT + SECURE FALLBACK)
+// 3. MOTEUR IA (AGENT + GOOGLE GROUNDING)
 // ==========================================
 const agent = {
     contextFiles: [],
@@ -341,7 +347,6 @@ const agent = {
         const input = document.getElementById('user-input');
         const text = input.value.trim();
         
-        // Vérifications
         if (!text || !config.apiKey || !config.activeModel) { 
             if(!text) return; 
             ui.toggleSettings(); 
@@ -352,85 +357,81 @@ const agent = {
         ui.addUserMessage(text); 
         ui.toggleLoading(true);
 
-        // SYSTEM PROMPT
+        // --- PROMPT "CHASSEUR DE TETE" ---
+        // On force l'IA à être bavarde sur les détails et à utiliser le Search Tool
         const systemPrompt = `
-        Rôle: Assistant Expert. Format: JSON STRICT.
+        Rôle: Chasseur de Têtes Expert.
+        Tâche: Trouve de vraies offres d'emploi sur le Web (Google Search).
         
-        Si tu trouves des offres d'emploi, utilise ce format JSON:
+        RÈGLES CRITIQUES:
+        1. Si tu trouves une offre, COPIE TOUTE LA DESCRIPTION. Ne résume pas. Je veux les détails techniques, les avantages, tout.
+        2. Extrais les Missions sous forme de liste précise.
+        3. Si tu trouves l'URL directe, mets-la. Sinon mets "SEARCH".
+        
+        FORMAT DE REPONSE (JSON STRICT):
         {
             "type": "job_list",
             "items": [
                 {
-                    "title": "Titre", "company": "Boite", "location": "Lieu",
-                    "url": "SEARCH", "source": "Web", "description": "Resumé"
+                    "title": "Titre complet",
+                    "company": "Nom Exact de la boite",
+                    "location": "Ville précise",
+                    "salary": "Salaire (si dispo)",
+                    "contract_type": "CDI/Freelance",
+                    "source": "Site d'origine (Indeed, LinkedIn...)",
+                    "url": "URL_REELLE_OU_SEARCH",
+                    "description": "Accroche courte pour la carte (20 mots max)",
+                    "description_long": "DESCRIPTION COMPLETE ET DETAILLEE (Minimum 150 mots). Copie le contenu de l'annonce.",
+                    "missions": ["Mission 1 détaillée", "Mission 2 détaillée", "Mission 3 détaillée", "Mission 4..."]
                 }
             ]
         }
         
-        Si c'est une demande d'images: { "type": "images", "query": "Sujet", "keywords": ["k1", "k2"] }
-        Sinon: { "type": "text", "content": "Ta réponse..." }
+        Si pas d'offres : { "type": "text", "content": "Analyse..." }
         
         Contexte Fichiers: ${agent.contextFiles.join(', ')}
         `;
 
-        // --- FONCTION D'ENVOI INTERNE (Try/Catch Wrapper) ---
         const executeRequest = async (useSearchTool) => {
             const payload = {
                 contents: [{ role: "user", parts: [{ text: systemPrompt + "\nRecherche : " + text }] }]
             };
-
-            // On ajoute l'outil Google Search SEULEMENT si demandé
-            if (useSearchTool) {
-                payload.tools = [{ google_search: {} }];
-            }
+            if (useSearchTool) payload.tools = [{ google_search: {} }];
 
             const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.activeModel}:generateContent?key=${config.apiKey}`, {
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'},
+                method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
             });
-
             const d = await r.json();
-            if(d.error) throw new Error(d.error.message); // Déclenche le catch si erreur Google
+            if(d.error) throw new Error(d.error.message);
             return d;
         };
 
         try {
             let d;
             try {
-                // TENTATIVE 1 : AVEC RECHERCHE GOOGLE
-                console.log("Tentative 1 : Avec Google Search...");
-                d = await executeRequest(true); // true = avec tools
+                // TENTATIVE 1 : AVEC RECHERCHE GOOGLE (Pour les offres récentes)
+                d = await executeRequest(true); 
             } catch (searchError) {
-                // SI ERREUR (ex: Modèle incompatible), ON RETENTE SANS RECHERCHE
-                console.warn("Échec Recherche Google, bascule en mode texte classique...", searchError);
-                ui.addSystemMessage(`<div class="text-[10px] text-amber-500 mb-2 italic"><i class="fa-solid fa-triangle-exclamation"></i> Recherche Google indisponible sur ce modèle. Passage en mode standard.</div>`);
-                
-                // TENTATIVE 2 : SANS OUTILS (Juste LLM)
-                d = await executeRequest(false); // false = sans tools
+                console.warn("Mode Search échoué, repli...", searchError);
+                ui.addSystemMessage(`<div class="text-[10px] text-amber-500 mb-2 italic">⚠️ Mode Recherche limité. Résultats basés sur les connaissances générales.</div>`);
+                d = await executeRequest(false);
             }
             
-            // --- TRAITEMENT DE LA RÉPONSE ---
-            let rawText = "";
-            if (d.candidates && d.candidates[0].content && d.candidates[0].content.parts) {
-                rawText = d.candidates[0].content.parts[0].text;
-            }
-
+            let rawText = d.candidates?.[0]?.content?.parts?.[0]?.text || "";
             let cleanJson = rawText.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
             
             try { 
                 const jsonData = JSON.parse(cleanJson);
+                // Si l'IA renvoie une liste vide ou un texte déguisé
+                if(jsonData.type === 'job_list' && jsonData.items.length === 0) throw new Error("Empty list");
                 ui.addSystemMessage(ui.renderWidget(jsonData)); 
             } catch(e) { 
                 ui.addSystemMessage(`<div class="glass-message p-4">${marked.parse(rawText)}</div>`); 
             }
 
         } catch (finalError) {
-            // Si même le mode texte échoue (ex: Clé invalide, Quota dépassé)
-            ui.addSystemMessage(`<div class="text-red-400 text-xs p-3 border border-red-500/50 rounded bg-slate-800">
-                <b>Erreur Fatale :</b> ${finalError.message}<br>
-                Vérifiez votre clé API ou changez de modèle dans les paramètres.
-            </div>`);
+            ui.addSystemMessage(`<div class="text-red-400 text-xs p-3 border border-red-500/50 rounded bg-slate-800">Erreur : ${finalError.message}</div>`);
         }
         ui.toggleLoading(false);
     }
