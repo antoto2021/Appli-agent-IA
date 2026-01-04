@@ -1,32 +1,53 @@
-// --- CONFIGURATION ENGINE (DEEP SCAN & UPDATE) ---
+/**
+ * =================================================================
+ * NEXUS AGENT V5.2 - MOTEUR PRINCIPAL
+ * =================================================================
+ * Ce fichier gère toute la logique de l'application :
+ * 1. Configuration & Scan IA (Deep Scan)
+ * 2. Interface Utilisateur (UI), Modales, Notifications
+ * 3. Moteur IA (Envoi vers Gemini, Parsing JSON)
+ * 4. Gestion des Liens Intelligents (Fix pour les liens 404)
+ */
+
+// ==========================================
+// 1. CONFIGURATION & MISE À JOUR
+// ==========================================
 const config = {
+    // Stockage local des clés et modèles préférés
     apiKey: localStorage.getItem('nexus_api_key_v5') || '',
     activeModel: localStorage.getItem('nexus_active_model_v5') || null,
-    // Fallback si l'API de liste échoue
-    fallbackModels: ['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'],
     
-    // Configuration GitHub pour la mise à jour
+    // Modèles de secours si le scan automatique échoue
+    fallbackModels: ['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+    
+    // --- GITHUB UPDATE CONFIG ---
     githubUser: 'antoto2021',
-    githubRepo: 'Appli-agent-IA',
-    localHash: localStorage.getItem('nexus_app_hash') || 'init_v5.1_local',
+    githubRepo: 'Appli-agent-ia', // Nom du repo mis à jour
+    localHash: localStorage.getItem('nexus_app_hash') || 'init_v5.2',
 
+    // Initialisation : Affiche le hash local au démarrage
     init: () => {
-        document.getElementById('local-hash-display').innerText = config.localHash;
+        const el = document.getElementById('info-local-v');
+        if(el) el.innerText = config.localHash;
     },
 
+    // Fonction de log pour la console du scan (dans les paramètres)
     log: (msg, type = 'info') => {
         const consoleEl = document.getElementById('connection-log');
         const line = document.createElement('div');
         line.className = "console-line";
+        // Couleurs selon le type de message
         if (type === 'error') line.classList.add("text-red-400");
         else if (type === 'success') line.classList.add("text-green-400", "font-bold");
         else line.classList.add("text-slate-300");
+        
         line.innerHTML = `<span class="opacity-30 mr-2">${new Date().toLocaleTimeString().split(' ')[0]}</span>${msg}`;
         consoleEl.appendChild(line);
         consoleEl.scrollTop = consoleEl.scrollHeight;
     },
 
-    // --- NOUVELLE LOGIQUE DE SCAN ---
+    // --- DEEP SCAN INTELLIGENT ---
+    // Récupère dynamiquement la liste des modèles disponibles pour la clé API fournie
     startDeepScan: async () => {
         const keyInput = document.getElementById('api-key-input').value.trim();
         const countEl = document.getElementById('tested-count');
@@ -39,43 +60,42 @@ const config = {
         let candidateList = [];
         
         try {
-            // C'est ici que la magie opère : on demande à l'API ce qui est dispo
+            // Appel à l'API Google pour lister les modèles
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keyInput}`);
             if (response.ok) {
                 const data = await response.json();
-                // On filtre uniquement les modèles qui font du 'generateContent'
+                // Filtre uniquement les modèles capables de générer du texte
                 candidateList = data.models
                     .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
                     .map(m => m.name.replace('models/', ''))
-                    .sort().reverse(); // On prend les plus récents en premier
-                
+                    .sort().reverse(); 
                 config.log(`OK: ${candidateList.length} modèles détectés.`);
             } else {
                 throw new Error("Impossible de lister les modèles");
             }
         } catch (e) {
-            config.log("API Liste échouée. Utilisation liste secours.", "error");
+            config.log("API Liste échouée. Mode Secours.", "error");
             candidateList = config.fallbackModels;
         }
 
+        // Test de connexion sur chaque modèle
         config.log("2. Test de connexion...");
         let workingModel = null;
         let tested = 0;
         
-        // On teste un par un
         for (const model of candidateList) {
             tested++; 
             countEl.innerText = `${tested}/${candidateList.length}`;
             config.log(`Test: ${model}...`);
             
             try {
+                // Envoi d'un ping minimaliste
                 await config.testModel(model, keyInput);
                 workingModel = model;
                 config.log(`>>> SUCCÈS : ${model}`, "success");
-                // On s'arrête dès qu'on en trouve un qui marche !
-                break;
+                break; // On s'arrête au premier succès
             } catch (e) {
-                // On ne log pas l'erreur complète pour ne pas spammer, juste on continue
+                // Echec silencieux pour passer au suivant
             }
         }
 
@@ -89,6 +109,7 @@ const config = {
         }
     },
 
+    // Fonction unitaire de test
     testModel: async (modelName, key) => {
         const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -97,13 +118,11 @@ const config = {
         if (!r.ok) throw new Error();
     },
 
-    // --- LOGIQUE MISE A JOUR GITHUB ---
+    // --- VÉRIFICATION GITHUB (VERSION CHECK) ---
     checkUpdate: async () => {
-        const btn = document.getElementById('btn-update-check');
-        const remoteDisplay = document.getElementById('remote-hash-display');
-        
-        btn.disabled = true;
-        btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Vérification...`;
+        const remoteDisplay = document.getElementById('info-remote-v');
+        remoteDisplay.innerText = "Checking...";
+        remoteDisplay.classList.add("animate-pulse");
 
         try {
             const response = await fetch(`https://api.github.com/repos/${config.githubUser}/${config.githubRepo}/commits/main`);
@@ -111,25 +130,22 @@ const config = {
                 const data = await response.json();
                 const shortHash = data.sha.substring(0, 7);
                 remoteDisplay.innerText = shortHash;
+                remoteDisplay.classList.remove("animate-pulse");
                 
-                // Sauvegarde du hash distant comme nouveau hash local (simulation mise à jour)
+                // Sauvegarde pour le futur
                 localStorage.setItem('nexus_app_hash', shortHash);
                 
                 if(shortHash !== config.localHash) {
-                    remoteDisplay.classList.add('text-yellow-400');
-                    remoteDisplay.innerText += " (Nouvelle version!)";
+                    remoteDisplay.innerHTML += " <span class='text-amber-400'>(Update dispo!)</span>";
                 } else {
-                    remoteDisplay.innerText += " (À jour)";
+                    remoteDisplay.innerHTML += " <span class='text-slate-500'>(À jour)</span>";
                 }
             } else {
-                throw new Error("Erreur GitHub");
+                throw new Error("Repo introuvable");
             }
         } catch (e) {
-            remoteDisplay.innerText = "Erreur Connexion";
+            remoteDisplay.innerText = "Erreur co.";
             remoteDisplay.classList.add('text-red-400');
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = `<i class="fa-solid fa-rotate"></i> Vérifier les mises à jour`;
         }
     },
 
@@ -142,20 +158,56 @@ const config = {
     }
 };
 
-// --- UI CONTROLLER ---
-// Global Map to store temporary job data for modals
-const jobDataMap = new Map();
+// ==========================================
+// 2. INTERFACE UTILISATEUR (UI)
+// ==========================================
+const jobDataMap = new Map(); // Stocke les données des jobs temporairement
 
 const ui = {
+    // Ouvre/Ferme le modal Paramètres
     toggleSettings: () => {
         const modal = document.getElementById('settings-modal');
         modal.classList.toggle('hidden');
         if (!modal.classList.contains('hidden')) {
             document.getElementById('api-key-input').value = config.apiKey;
-            config.init(); // Refresh hash display
         }
     },
 
+    // Ouvre/Ferme le modal Info Système
+    toggleInfo: () => {
+        const modal = document.getElementById('info-modal');
+        modal.classList.toggle('hidden');
+        if (!modal.classList.contains('hidden')) {
+            config.init(); // Rafraichit l'affichage du hash local
+        }
+    },
+
+    // Rafraichit la page (Bouton Header)
+    refreshApp: () => {
+        const btn = document.getElementById('btn-refresh');
+        btn.classList.add('spin-once');
+        setTimeout(() => window.location.reload(), 800);
+    },
+
+    // Exporte la conversation en PDF (Bouton Header)
+    exportPDF: () => {
+        if (!window.jspdf) return alert('Erreur librairie PDF');
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        doc.setFontSize(16);
+        doc.text("Rapport Nexus Agent", 10, 10);
+        doc.setFontSize(10);
+        
+        // Récupère tout le texte du chat
+        const chatText = document.getElementById('chat-history').innerText;
+        const lines = doc.splitTextToSize(chatText, 180);
+        
+        doc.text(lines, 10, 20);
+        doc.save(`Nexus_Export_${Date.now()}.pdf`);
+    },
+
+    // Met à jour le point de statut en bas de page
     updateStatus: (connected) => {
         const dot = document.getElementById('status-dot');
         const text = document.getElementById('model-status');
@@ -169,6 +221,7 @@ const ui = {
         }
     },
 
+    // Gère l'upload de fichier (visuel dans le chat)
     handleFileUpload: (input) => {
         if(input.files.length > 0) {
             const names = Array.from(input.files).map(f => f.name).join(', ');
@@ -182,6 +235,7 @@ const ui = {
         c.scrollTop = c.scrollHeight;
     },
 
+    // Ajoute un message utilisateur
     addUserMessage: (text, isSystem = false) => {
         const historyDiv = document.getElementById('chat-history');
         const div = document.createElement('div');
@@ -191,6 +245,7 @@ const ui = {
         ui.scrollToBottom();
     },
 
+    // Ajoute un message système (AI)
     addSystemMessage: (contentHtml) => {
         const historyDiv = document.getElementById('chat-history');
         const div = document.createElement('div');
@@ -209,21 +264,31 @@ const ui = {
         ui.scrollToBottom();
     },
 
-    // --- JOB MODAL LOGIC ---
+    // --- LOGIQUE MODALE JOB (CORRECTIF LIENS) ---
     openJobModal: (jobId) => {
         const job = jobDataMap.get(jobId);
         if (!job) return;
 
+        // Remplissage des champs texte
         document.getElementById('modal-title').innerText = job.title || "Titre non spécifié";
         document.getElementById('modal-company').innerText = job.company || "Entreprise confidentielle";
-        document.getElementById('modal-location').innerText = job.location || "Télétravail / Non spécifié";
+        document.getElementById('modal-location').innerText = job.location || "Non spécifié";
         document.getElementById('modal-salary').innerText = job.salary || "N.C.";
         document.getElementById('modal-contract').innerText = job.contract_type || "Freelance";
         document.getElementById('modal-duration').innerText = job.duration || "Indéterminée";
         document.getElementById('modal-source').innerText = job.source || "Web";
         document.getElementById('modal-desc').innerText = job.description_long || job.description || "Pas de description détaillée.";
-        document.getElementById('modal-link').href = job.url || "#";
         
+        // --- CORRECTIF LIENS INTELLIGENTS ---
+        // Si le lien est vide, invalide ou "fake", on génère une recherche Google
+        let targetUrl = job.url;
+        if (!targetUrl || targetUrl.includes('fake-link') || targetUrl === '#' || targetUrl === 'SEARCH') {
+            const query = encodeURIComponent(`${job.title} ${job.company} emploi`);
+            targetUrl = `https://www.google.com/search?q=${query}`;
+        }
+        document.getElementById('modal-link').href = targetUrl;
+        
+        // Gestion du Logo (Fallback si erreur)
         const logoImg = document.getElementById('modal-logo');
         if (job.logo_url && job.logo_url !== "null") {
             logoImg.src = job.logo_url;
@@ -231,6 +296,7 @@ const ui = {
             logoImg.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(job.company || 'Job')}&background=random&color=fff&size=128`;
         }
 
+        // Remplissage liste missions
         const missionList = document.getElementById('modal-missions');
         missionList.innerHTML = '';
         if (job.missions && Array.isArray(job.missions)) {
@@ -240,11 +306,10 @@ const ui = {
                 missionList.appendChild(li);
             });
         } else {
-            const li = document.createElement('li');
-            li.innerText = "Détails des missions non fournis par l'analyseur.";
-            missionList.appendChild(li);
+            missionList.innerHTML = "<li>Détails non fournis.</li>";
         }
 
+        // Affichage avec animation
         const modal = document.getElementById('job-modal');
         const content = document.getElementById('job-modal-content');
         modal.classList.remove('hidden');
@@ -262,11 +327,12 @@ const ui = {
         setTimeout(() => modal.classList.add('hidden'), 200);
     },
 
+    // Construit le HTML pour les Widgets (Job cards, Images)
     renderWidget: (data) => {
         if (data.type === 'job_list') {
             const renderedItems = data.items.map((job, index) => {
                 const uniqueId = `job_${Date.now()}_${index}`;
-                jobDataMap.set(uniqueId, job);
+                jobDataMap.set(uniqueId, job); // Stocke l'objet job pour récupération
                 
                 return `
                     <div class="bg-slate-800 border border-slate-700 p-3 rounded-xl hover:border-indigo-500 transition-colors group relative">
@@ -300,6 +366,7 @@ const ui = {
                     ${renderedItems}
                 </div>`;
         } else if (data.type === 'images') {
+            // Widget Images (Inspiration)
             return `
                 <div class="mb-2 text-slate-300">Inspirations pour : <span class="italic text-indigo-400">${data.query}</span></div>
                 <div class="grid grid-cols-2 gap-2">
@@ -311,52 +378,68 @@ const ui = {
                     `).join('')}
                 </div>`;
         }
+        // Fallback: Texte Markdown standard
         return `<div class="glass-message rounded-2xl rounded-tl-none p-4">${marked.parse(data.content || "")}</div>`;
     }
 };
 
-// --- AGENT BRAIN ---
+// ==========================================
+// 3. MOTEUR IA (AGENT)
+// ==========================================
 const agent = {
     contextFiles: [],
+    
+    // Envoi du message à Gemini
     send: async () => {
         const input = document.getElementById('user-input');
         const text = input.value.trim();
-        if (!text || !config.apiKey || !config.activeModel) { if(!text) return; ui.toggleSettings(); return; }
-
-        input.value = ''; ui.addUserMessage(text); ui.toggleLoading(true);
-
-        // ULTRA-DETAILED SYSTEM PROMPT
-        const systemPrompt = `
-        Rôle: Assistant Freelance. Réponds UNIQUEMENT en JSON (PAS DE MARKDOWN).
         
-        SI OFFRE EMPLOI/MISSION (Génère/Trouve 3-4 offres):
+        // Vérifications pré-envoi
+        if (!text || !config.apiKey || !config.activeModel) { 
+            if(!text) return; 
+            ui.toggleSettings(); 
+            return; 
+        }
+
+        input.value = ''; 
+        ui.addUserMessage(text); 
+        ui.toggleLoading(true);
+
+        // SYSTEM PROMPT : La "recette" pour forcer le JSON et les liens
+        const systemPrompt = `
+        Rôle: Assistant Freelance Expert. 
+        Format de réponse: JSON STRICT (PAS de markdown autour).
+        
+        Si tu ne trouves pas de lien réel pour une offre, mets la valeur "SEARCH" dans le champ 'url'.
+        
+        STRUCTURE JSON ATTENDUE POUR OFFRES:
         {
             "type": "job_list",
             "items": [
                 {
-                    "title": "Titre précis",
-                    "company": "Nom Entreprise",
-                    "salary": "TJM ou Salaire (ex: 600€/j)",
-                    "duration": "Durée (ex: 6 mois)",
-                    "contract_type": "Freelance / CDI / Intérim",
-                    "location": "Ville / Télétravail",
-                    "source": "LinkedIn / Indeed / Malt",
-                    "description": "Accroche courte (2 lignes max)",
-                    "description_long": "Paragraphe détaillé du contexte du projet...",
-                    "missions": ["Mission 1 précise", "Mission 2", "Mission 3"],
-                    "logo_url": "URL du logo (ou null)",
-                    "url": "https://fake-link-for-demo.com"
+                    "title": "Titre",
+                    "company": "Entreprise",
+                    "salary": "Salaire/TJM",
+                    "duration": "Durée",
+                    "contract_type": "Freelance/CDI",
+                    "location": "Lieu",
+                    "source": "Source",
+                    "description": "Courte desc",
+                    "description_long": "Longue desc",
+                    "missions": ["m1", "m2"],
+                    "logo_url": "null",
+                    "url": "SEARCH" 
                 }
             ]
         }
         
-        SI IMAGES: { "type": "images", "query": "Sujet", "keywords": ["k1_en", "k2_en"] }
-        SINON TEXTE: { "type": "text", "content": "Réponse markdown..." }
+        POUR LE RESTE: { "type": "text", "content": "Ta réponse markdown..." }
         
         Contexte Fichiers: ${agent.contextFiles.join(', ')}
         `;
 
         try {
+            // Appel API Gemini
             const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.activeModel}:generateContent?key=${config.apiKey}`, {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: systemPrompt + "\nUser Query: " + text }] }] })
@@ -364,9 +447,19 @@ const agent = {
             const d = await r.json();
             if(d.error) throw new Error(d.error.message);
             
-            let raw = d.candidates[0].content.parts[0].text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
-            try { ui.addSystemMessage(ui.renderWidget(JSON.parse(raw))); } 
-            catch(e) { ui.addSystemMessage(`<div class="glass-message p-4">${marked.parse(raw)}</div>`); }
+            // Nettoyage du JSON (Gemini ajoute parfois ```json au début)
+            let raw = d.candidates[0].content.parts[0].text
+                .replace(/^```json\s*/, '')
+                .replace(/^```\s*/, '')
+                .replace(/\s*```$/, '');
+            
+            try { 
+                // Essai de parsing JSON et affichage Widget
+                ui.addSystemMessage(ui.renderWidget(JSON.parse(raw))); 
+            } catch(e) { 
+                // Si le JSON est cassé, on affiche le texte brut
+                ui.addSystemMessage(`<div class="glass-message p-4">${marked.parse(raw)}</div>`); 
+            }
         } catch (e) {
             ui.addSystemMessage(`<div class="text-red-400 text-xs p-3 border border-red-500/50 rounded bg-slate-800">Erreur: ${e.message}</div>`);
         }
@@ -374,8 +467,19 @@ const agent = {
     }
 };
 
-document.getElementById('user-input').addEventListener('keypress', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agent.send(); } });
-if (config.apiKey && config.activeModel) ui.updateStatus(true); else setTimeout(() => ui.toggleSettings(), 800);
+// ==========================================
+// 4. LISTENERS (Démarrage)
+// ==========================================
 
-// Initialisation de l'affichage du Hash
-config.init();
+// Envoi avec la touche Entrée
+document.getElementById('user-input').addEventListener('keypress', (e) => { 
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agent.send(); } 
+});
+
+// Vérification de connexion au démarrage
+if (config.apiKey && config.activeModel) {
+    ui.updateStatus(true);
+    config.init();
+} else {
+    setTimeout(() => ui.toggleSettings(), 800);
+}
