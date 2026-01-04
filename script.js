@@ -1,11 +1,11 @@
 /**
  * =================================================================
- * NEXUS AGENT V6.1 - DEEP HUNTER EDITION
+ * NEXUS AGENT V6.2 - PRECISION LINK EDITION
  * =================================================================
- * Améliorations :
- * 1. Mode "Chasseur de Tête" : Force des descriptions longues et détaillées.
- * 2. Smart Links : Utilise l'interface Google Jobs pour contourner les protections.
- * 3. Fallback Robuste : Si pas de lien direct, génère une requête précise.
+ * Correctifs :
+ * 1. Prompt "URL Extractor" : Force l'IA à récupérer le lien source exact.
+ * 2. Fallback "Deep Search" : Si le lien échoue, génère une requête ciblée.
+ * 3. Nettoyage JSON renforcé pour éviter les erreurs de parsing.
  */
 
 // ==========================================
@@ -15,12 +15,12 @@ const config = {
     apiKey: localStorage.getItem('nexus_api_key_v5') || '',
     activeModel: localStorage.getItem('nexus_active_model_v5') || null,
     
-    // On privilégie les modèles PRO pour la capacité d'analyse et de détail
+    // On privilégie les modèles PRO pour la précision des liens
     fallbackModels: ['gemini-1.5-pro', 'gemini-1.5-pro-latest', 'gemini-1.5-flash'],
     
     githubUser: 'antoto2021',
     githubRepo: 'Appli-agent-ia',
-    localHash: localStorage.getItem('nexus_app_hash') || 'v6.1_deep_hunter',
+    localHash: localStorage.getItem('nexus_app_hash') || 'v6.2_precision_link',
 
     init: () => {
         const el = document.getElementById('info-local-v');
@@ -126,7 +126,7 @@ const config = {
         localStorage.setItem('nexus_api_key_v5', config.apiKey);
         localStorage.setItem('nexus_active_model_v5', config.activeModel);
         ui.toggleSettings();
-        ui.addSystemMessage(`Système connecté sur : <b>${config.activeModel}</b><br><span class="text-xs opacity-70">Mode Deep Hunter Activé.</span>`);
+        ui.addSystemMessage(`Système connecté sur : <b>${config.activeModel}</b><br><span class="text-xs opacity-70">Extraction de liens V6.2 activée.</span>`);
         ui.updateStatus(true);
     }
 };
@@ -160,7 +160,6 @@ const ui = {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         doc.setFontSize(10);
-        // Récupération propre du texte
         let y = 10;
         document.querySelectorAll('#chat-history > div').forEach(div => {
              const text = div.innerText.replace(/\n/g, ' ');
@@ -225,7 +224,7 @@ const ui = {
         ui.scrollToBottom();
     },
 
-    // --- MODALE OFFRE (LOGIQUE DE LIEN AVANCÉE) ---
+    // --- LOGIQUE MODALE OFFRE (Cœur de la correction) ---
     openJobModal: (jobId) => {
         const job = jobDataMap.get(jobId);
         if (!job) return;
@@ -238,25 +237,39 @@ const ui = {
         document.getElementById('modal-duration').innerText = job.duration || "Indéterminé";
         document.getElementById('modal-source').innerText = job.source || "Web";
         
-        // CORRECTION CONTENU: On force l'affichage du HTML si l'IA a renvoyé du markdown dans la description
+        // Contenu riche
         document.getElementById('modal-desc').innerHTML = marked.parse(job.description_long || job.description || "Pas de détails.");
 
-        // --- GÉNÉRATEUR DE LIEN GOOGLE JOBS (Le secret pour des vrais liens) ---
-        // On construit une requête spéciale pour l'interface "Google Emplois" qui agrège les vrais liens
-        const q = encodeURIComponent(`${job.title} ${job.company}`);
-        const googleJobsUrl = `https://www.google.com/search?ibp=htl;jobs&q=${q}`;
-        
+        // --- INTELLIGENT DEEP LINKING (Le Correctif) ---
+        // 1. Si l'IA nous a donné une URL valide et longue (pas juste "linkedin.com"), on l'utilise.
         let finalUrl = job.url;
-        // Si l'IA n'a pas trouvé d'URL explicite ou a mis un placeholder
-        if (!finalUrl || finalUrl === 'SEARCH' || finalUrl.includes('fake') || finalUrl.length < 15) {
-            finalUrl = googleJobsUrl;
+        
+        // 2. Si l'URL est suspecte (trop courte, placeholder "SEARCH", ou domaine racine), on bascule sur la recherche ciblée.
+        const isUrlSuspicious = !finalUrl || finalUrl === 'SEARCH' || finalUrl.includes('fake') || finalUrl.length < 20 || (finalUrl.includes('indeed.com') && !finalUrl.includes('viewjob'));
+        
+        if (isUrlSuspicious) {
+            // Construction d'une requête "Dorks" pour cibler la page exacte
+            // Exemple : site:indeed.com "Développeur" "Google"
+            const qTitle = job.title.replace(/[^a-zA-Z0-9 ]/g, ''); // Nettoyage
+            const qCompany = job.company.replace(/[^a-zA-Z0-9 ]/g, '');
+            
+            // On privilégie la source détectée
+            let siteFilter = "";
+            if (job.source && job.source.toLowerCase().includes('linkedin')) siteFilter = "site:linkedin.com/jobs";
+            else if (job.source && job.source.toLowerCase().includes('indeed')) siteFilter = "site:indeed.com";
+            else if (job.source && job.source.toLowerCase().includes('welcome')) siteFilter = "site:welcometothejungle.com";
+            
+            const query = encodeURIComponent(`${siteFilter} "${qTitle}" "${qCompany}"`);
+            finalUrl = `https://www.google.com/search?q=${query}`;
         }
 
         const linkBtn = document.getElementById('modal-link');
         linkBtn.href = finalUrl;
-        linkBtn.innerHTML = `Voir l'offre officielle <i class="fa-solid fa-arrow-up-right-from-square ml-2"></i>`;
+        linkBtn.innerHTML = isUrlSuspicious 
+            ? `Trouver l'annonce (Recherche Ciblée) <i class="fa-solid fa-magnifying-glass ml-2"></i>` 
+            : `Postuler (Lien Direct) <i class="fa-solid fa-arrow-up-right-from-square ml-2"></i>`;
 
-        // Logo Fallback
+        // Logo
         const logoImg = document.getElementById('modal-logo');
         if (job.logo_url && job.logo_url !== "null") logoImg.src = job.logo_url;
         else logoImg.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(job.company || 'Job')}&background=random&color=fff&size=128`;
@@ -269,7 +282,6 @@ const ui = {
                 const li = document.createElement('li'); li.innerText = m; missionList.appendChild(li);
             });
         } else {
-            // Si pas de liste, on essaye d'extraire des bullet points du texte
             missionList.innerHTML = "<li class='italic text-slate-500'>Voir description complète ci-dessous</li>";
         }
 
@@ -357,37 +369,36 @@ const agent = {
         ui.addUserMessage(text); 
         ui.toggleLoading(true);
 
-        // --- PROMPT "CHASSEUR DE TETE" ---
-        // On force l'IA à être bavarde sur les détails et à utiliser le Search Tool
+        // --- SYSTEM PROMPT (ANTI-FAKE LINK) ---
         const systemPrompt = `
         Rôle: Chasseur de Têtes Expert.
-        Tâche: Trouve de vraies offres d'emploi sur le Web (Google Search).
         
-        RÈGLES CRITIQUES:
-        1. Si tu trouves une offre, COPIE TOUTE LA DESCRIPTION. Ne résume pas. Je veux les détails techniques, les avantages, tout.
-        2. Extrais les Missions sous forme de liste précise.
-        3. Si tu trouves l'URL directe, mets-la. Sinon mets "SEARCH".
+        TACHE PRINCIPALE:
+        Trouve des offres d'emploi réelles sur le Web via Google Search.
+        
+        IMPORTANT - GESTION DES LIENS:
+        1. Tu DOIS essayer de copier l'URL exacte de l'offre (commençant par https://...).
+        2. SI TU NE PEUX PAS copier l'URL exacte, écris "SEARCH" dans le champ 'url'. NE PAS INVENTER D'URL.
+        3. Copie INTÉGRALEMENT la description de l'offre (long texte).
         
         FORMAT DE REPONSE (JSON STRICT):
         {
             "type": "job_list",
             "items": [
                 {
-                    "title": "Titre complet",
-                    "company": "Nom Exact de la boite",
-                    "location": "Ville précise",
-                    "salary": "Salaire (si dispo)",
-                    "contract_type": "CDI/Freelance",
-                    "source": "Site d'origine (Indeed, LinkedIn...)",
-                    "url": "URL_REELLE_OU_SEARCH",
-                    "description": "Accroche courte pour la carte (20 mots max)",
-                    "description_long": "DESCRIPTION COMPLETE ET DETAILLEE (Minimum 150 mots). Copie le contenu de l'annonce.",
-                    "missions": ["Mission 1 détaillée", "Mission 2 détaillée", "Mission 3 détaillée", "Mission 4..."]
+                    "title": "Titre exact",
+                    "company": "Entreprise",
+                    "location": "Ville",
+                    "salary": "Salaire",
+                    "contract_type": "Type",
+                    "source": "Source (ex: LinkedIn)",
+                    "url": "URL_EXACTE_OU_SEARCH", 
+                    "description": "Accroche courte",
+                    "description_long": "TEXTE COMPLET DE L'ANNONCE...",
+                    "missions": ["Mission 1", "Mission 2"]
                 }
             ]
         }
-        
-        Si pas d'offres : { "type": "text", "content": "Analyse..." }
         
         Contexte Fichiers: ${agent.contextFiles.join(', ')}
         `;
@@ -410,11 +421,11 @@ const agent = {
         try {
             let d;
             try {
-                // TENTATIVE 1 : AVEC RECHERCHE GOOGLE (Pour les offres récentes)
+                // Essai avec Google Search
                 d = await executeRequest(true); 
             } catch (searchError) {
                 console.warn("Mode Search échoué, repli...", searchError);
-                ui.addSystemMessage(`<div class="text-[10px] text-amber-500 mb-2 italic">⚠️ Mode Recherche limité. Résultats basés sur les connaissances générales.</div>`);
+                ui.addSystemMessage(`<div class="text-[10px] text-amber-500 mb-2 italic">⚠️ Mode Recherche limité. Résultats théoriques.</div>`);
                 d = await executeRequest(false);
             }
             
@@ -423,7 +434,6 @@ const agent = {
             
             try { 
                 const jsonData = JSON.parse(cleanJson);
-                // Si l'IA renvoie une liste vide ou un texte déguisé
                 if(jsonData.type === 'job_list' && jsonData.items.length === 0) throw new Error("Empty list");
                 ui.addSystemMessage(ui.renderWidget(jsonData)); 
             } catch(e) { 
