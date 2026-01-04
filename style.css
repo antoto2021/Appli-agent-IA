@@ -6,6 +6,20 @@ body { font-family: 'Inter', sans-serif; background-color: #0b1121; color: #e2e8
 ::-webkit-scrollbar-track { background: #1e293b; }
 ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 3px; }
 
+/* --- Header Buttons --- */
+.btn-header {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+    color: #94a3b8;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    transition: all 0.2s;
+    cursor: pointer;
+}
+.btn-header:hover { background: rgba(255,255,255,0.1); color: white; border-color: rgba(255,255,255,0.2); }
+.btn-header:active { transform: scale(0.95); }
+
 /* --- Messages & Chat --- */
 .glass-message { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.05); }
 .user-message { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); }
@@ -14,15 +28,18 @@ body { font-family: 'Inter', sans-serif; background-color: #0b1121; color: #e2e8
 .fade-in { animation: fadeIn 0.3s ease-out forwards; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
+.spin-once { animation: spin 0.8s ease-in-out; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
 .typing-dot { animation: typing 1.4s infinite ease-in-out both; }
 .typing-dot:nth-child(1) { animation-delay: -0.32s; }
 .typing-dot:nth-child(2) { animation-delay: -0.16s; }
 @keyframes typing { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
 
-/* --- Console Logs (Settings) --- */
+/* --- Console Logs --- */
 .console-line { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
 
-/* --- Markdown Styles --- */
+/* --- Markdown --- */
 .prose code { color: #a5b4fc; font-family: 'JetBrains Mono', monospace; background: rgba(0,0,0,0.3); padding: 2px 4px; rounded: 4px; font-size: 0.9em; }
 .prose p { margin-bottom: 0.5rem; }
 .prose ul { list-style-type: disc; padding-left: 1.2rem; margin-bottom: 0.5rem; }
