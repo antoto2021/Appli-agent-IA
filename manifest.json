@@ -1,6 +1,6 @@
 {
-  "name": "Agent IA - System V6",
-  "short_name": "AgentIA",
+  "name": "Nexus Agent V5.1",
+  "short_name": "Nexus",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",
