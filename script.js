@@ -332,7 +332,7 @@ const ui = {
 };
 
 // ==========================================
-// 3. MOTEUR IA (AGENT + GOOGLE SEARCH)
+// 3. MOTEUR IA (AGENT + SECURE FALLBACK)
 // ==========================================
 const agent = {
     contextFiles: [],
@@ -340,76 +340,97 @@ const agent = {
     send: async () => {
         const input = document.getElementById('user-input');
         const text = input.value.trim();
-        if (!text || !config.apiKey || !config.activeModel) { if(!text) return; ui.toggleSettings(); return; }
+        
+        // Vérifications
+        if (!text || !config.apiKey || !config.activeModel) { 
+            if(!text) return; 
+            ui.toggleSettings(); 
+            return; 
+        }
 
-        input.value = ''; ui.addUserMessage(text); ui.toggleLoading(true);
+        input.value = ''; 
+        ui.addUserMessage(text); 
+        ui.toggleLoading(true);
 
-        // --- SYSTEM PROMPT STRICT ---
-        // On force l'usage du tool de recherche Google si l'utilisateur cherche un job
+        // SYSTEM PROMPT
         const systemPrompt = `
-        ROLE: Assistant Recherche Emploi Expert.
+        Rôle: Assistant Expert. Format: JSON STRICT.
         
-        INSTRUCTION CRITIQUE:
-        Tu DOIS utiliser tes capacités de recherche (Google Search) pour trouver des offres RÉELLES et ACTUELLES.
-        NE PAS INVENTER D'OFFRES. Si tu ne trouves rien, dis-le.
-        
-        FORMAT DE REPONSE ATTENDU (JSON STRICT):
+        Si tu trouves des offres d'emploi, utilise ce format JSON:
         {
             "type": "job_list",
             "items": [
                 {
-                    "title": "Titre exact de l'annonce",
-                    "company": "Entreprise",
-                    "salary": "Salaire (si dispo)",
-                    "location": "Ville",
-                    "source": "Site (ex: Indeed, LinkedIn, HelloWork)",
-                    "url": "Lien URL de l'offre (OU 'SEARCH' si pas de lien direct)",
-                    "description": "Bref résumé",
-                    "missions": ["point 1", "point 2"]
+                    "title": "Titre", "company": "Boite", "location": "Lieu",
+                    "url": "SEARCH", "source": "Web", "description": "Resumé"
                 }
             ]
         }
         
-        Si pas d'offres : { "type": "text", "content": "Analyse ou réponse textuelle..." }
+        Si c'est une demande d'images: { "type": "images", "query": "Sujet", "keywords": ["k1", "k2"] }
+        Sinon: { "type": "text", "content": "Ta réponse..." }
         
-        Contexte Fichiers Utilisateur : ${agent.contextFiles.join(', ')}
+        Contexte Fichiers: ${agent.contextFiles.join(', ')}
         `;
 
-        try {
-            // --- APPEL API AVEC GOOGLE SEARCH TOOL ---
+        // --- FONCTION D'ENVOI INTERNE (Try/Catch Wrapper) ---
+        const executeRequest = async (useSearchTool) => {
             const payload = {
-                contents: [{ role: "user", parts: [{ text: systemPrompt + "\nRecherche et trouve : " + text }] }],
-                // C'est ici qu'on active le "Grounding" (Recherche Google)
-                tools: [{ google_search: {} }] 
+                contents: [{ role: "user", parts: [{ text: systemPrompt + "\nRecherche : " + text }] }]
             };
 
+            // On ajoute l'outil Google Search SEULEMENT si demandé
+            if (useSearchTool) {
+                payload.tools = [{ google_search: {} }];
+            }
+
             const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.activeModel}:generateContent?key=${config.apiKey}`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
             });
+
             const d = await r.json();
+            if(d.error) throw new Error(d.error.message); // Déclenche le catch si erreur Google
+            return d;
+        };
+
+        try {
+            let d;
+            try {
+                // TENTATIVE 1 : AVEC RECHERCHE GOOGLE
+                console.log("Tentative 1 : Avec Google Search...");
+                d = await executeRequest(true); // true = avec tools
+            } catch (searchError) {
+                // SI ERREUR (ex: Modèle incompatible), ON RETENTE SANS RECHERCHE
+                console.warn("Échec Recherche Google, bascule en mode texte classique...", searchError);
+                ui.addSystemMessage(`<div class="text-[10px] text-amber-500 mb-2 italic"><i class="fa-solid fa-triangle-exclamation"></i> Recherche Google indisponible sur ce modèle. Passage en mode standard.</div>`);
+                
+                // TENTATIVE 2 : SANS OUTILS (Juste LLM)
+                d = await executeRequest(false); // false = sans tools
+            }
             
-            if(d.error) throw new Error(d.error.message);
-            
-            // Extraction de la réponse
+            // --- TRAITEMENT DE LA RÉPONSE ---
             let rawText = "";
             if (d.candidates && d.candidates[0].content && d.candidates[0].content.parts) {
                 rawText = d.candidates[0].content.parts[0].text;
             }
 
-            // Nettoyage JSON
             let cleanJson = rawText.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
             
             try { 
                 const jsonData = JSON.parse(cleanJson);
                 ui.addSystemMessage(ui.renderWidget(jsonData)); 
             } catch(e) { 
-                // Si ce n'est pas du JSON, c'est du texte brut (ex: discussion générale)
                 ui.addSystemMessage(`<div class="glass-message p-4">${marked.parse(rawText)}</div>`); 
             }
 
-        } catch (e) {
-            ui.addSystemMessage(`<div class="text-red-400 text-xs p-3 border border-red-500/50 rounded bg-slate-800">Erreur : ${e.message}<br>Vérifiez que votre modèle supporte la recherche Google (Gemini 1.5 Pro/Flash).</div>`);
+        } catch (finalError) {
+            // Si même le mode texte échoue (ex: Clé invalide, Quota dépassé)
+            ui.addSystemMessage(`<div class="text-red-400 text-xs p-3 border border-red-500/50 rounded bg-slate-800">
+                <b>Erreur Fatale :</b> ${finalError.message}<br>
+                Vérifiez votre clé API ou changez de modèle dans les paramètres.
+            </div>`);
         }
         ui.toggleLoading(false);
     }
