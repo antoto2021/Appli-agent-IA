@@ -3,167 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Agent IA - V5 Details</title>
+    <title>Agent IA - System V6</title>
+    
+    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="h-screen flex flex-col overflow-hidden text-sm md:text-base">
+<body class="bg-slate-900 text-slate-200 overflow-hidden">
+    
+    <div id="root"></div>
 
-    <header class="h-14 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/90 z-20">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                <i class="fa-solid fa-network-wired text-white"></i>
-            </div>
-            <div>
-                <h1 class="font-bold tracking-tight text-slate-100">Nexus Agent <span class="text-xs font-normal text-indigo-400 border border-indigo-900 bg-indigo-900/30 px-1.5 py-0.5 rounded ml-2">V5.0</span></h1>
-            </div>
-        </div>
-        <button onclick="ui.toggleSettings()" class="text-slate-400 hover:text-white p-2 transition-colors">
-            <i class="fa-solid fa-gear"></i>
-        </button>
-    </header>
+    <script type="text/babel" src="script.js"></script>
 
-    <main id="chat-container" class="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
-        <div class="flex gap-4 fade-in">
-            <div class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex-shrink-0 flex items-center justify-center">
-                <i class="fa-solid fa-terminal text-indigo-400 text-xs"></i>
-            </div>
-            <div class="glass-message rounded-2xl rounded-tl-none p-4 max-w-[90%]">
-                <p class="mb-2 font-bold text-indigo-300">Module Détails Activé.</p>
-                <p class="text-slate-300">Les fiches de mission incluent maintenant logos, adresses et descriptions détaillées.</p>
-            </div>
-        </div>
-        <div id="chat-history" class="space-y-6"></div>
-        
-        <div id="loading-indicator" class="hidden flex gap-4">
-            <div class="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
-                <i class="fa-solid fa-circle-notch fa-spin text-blue-400 text-xs"></i>
-            </div>
-            <div class="glass-message rounded-2xl rounded-tl-none p-4 flex items-center gap-1 h-12">
-                <div class="w-2 h-2 bg-slate-400 rounded-full typing-dot"></div>
-                <div class="w-2 h-2 bg-slate-400 rounded-full typing-dot"></div>
-                <div class="w-2 h-2 bg-slate-400 rounded-full typing-dot"></div>
-            </div>
-        </div>
-        <div class="h-24"></div>
-    </main>
-
-    <footer class="fixed bottom-0 left-0 w-full bg-slate-900/95 backdrop-blur border-t border-slate-800 p-3 z-30">
-        <div class="max-w-4xl mx-auto flex items-end gap-2 bg-slate-800 p-2 rounded-xl border border-slate-700 focus-within:border-blue-500 transition-colors">
-            <button onclick="document.getElementById('file-upload').click()" class="p-2 text-slate-400 hover:text-white"><i class="fa-solid fa-paperclip"></i></button>
-            <input type="file" id="file-upload" class="hidden" multiple onchange="ui.handleFileUpload(this)">
-            <textarea id="user-input" rows="1" class="flex-1 bg-transparent border-none focus:ring-0 text-white resize-none py-2 max-h-32" placeholder="Ex: Offres Data Marketing Freelance..."></textarea>
-            <button onclick="agent.send()" id="send-btn" class="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg shadow-lg"><i class="fa-solid fa-paper-plane"></i></button>
-        </div>
-        <div class="text-center mt-1 flex justify-center items-center gap-2">
-             <div id="status-dot" class="w-2 h-2 rounded-full bg-red-500"></div>
-             <span id="model-status" class="text-[10px] text-slate-500 font-mono">Non connecté</span>
-        </div>
-    </footer>
-
-    <div id="job-modal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4 backdrop-blur-md">
-        <div class="bg-slate-900 w-full max-w-2xl rounded-2xl border border-slate-700 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden transform transition-all scale-95 opacity-0" id="job-modal-content">
-            
-            <div class="p-6 border-b border-slate-800 bg-slate-800/50 flex gap-4 items-start relative">
-                <img id="modal-logo" src="" class="w-16 h-16 rounded-lg bg-white object-contain p-1 shadow-lg" onerror="this.src='https://ui-avatars.com/api/?name=Company&background=random'">
-                <div class="flex-1">
-                    <h2 id="modal-title" class="text-xl font-bold text-white leading-tight mb-1">Titre du poste</h2>
-                    <div class="flex items-center gap-2 text-sm text-slate-400">
-                        <i class="fa-regular fa-building"></i> <span id="modal-company">Entreprise</span>
-                        <span class="w-1 h-1 rounded-full bg-slate-600"></span>
-                        <i class="fa-solid fa-location-dot"></i> <span id="modal-location">Lieu</span>
-                    </div>
-                </div>
-                <button onclick="ui.closeJobModal()" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            </div>
-
-            <div class="p-6 overflow-y-auto space-y-6">
-                
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700">
-                        <div class="text-[10px] text-slate-500 uppercase font-bold mb-1">Rémunération</div>
-                        <div id="modal-salary" class="text-green-400 font-mono font-bold text-sm">---</div>
-                    </div>
-                    <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700">
-                        <div class="text-[10px] text-slate-500 uppercase font-bold mb-1">Contrat</div>
-                        <div id="modal-contract" class="text-blue-400 font-bold text-sm">---</div>
-                    </div>
-                    <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700">
-                        <div class="text-[10px] text-slate-500 uppercase font-bold mb-1">Durée</div>
-                        <div id="modal-duration" class="text-slate-300 text-sm">---</div>
-                    </div>
-                    <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700">
-                        <div class="text-[10px] text-slate-500 uppercase font-bold mb-1">Source</div>
-                        <div id="modal-source" class="text-slate-300 text-sm">---</div>
-                    </div>
-                </div>
-
-                <div>
-                    <h3 class="text-sm font-bold text-white mb-3 uppercase tracking-wide border-l-4 border-indigo-500 pl-2">Missions & Responsabilités</h3>
-                    <ul id="modal-missions" class="space-y-2 text-slate-300 text-sm list-disc pl-5 marker:text-indigo-500">
-                        </ul>
-                </div>
-
-                <div>
-                    <h3 class="text-sm font-bold text-white mb-2 uppercase tracking-wide border-l-4 border-slate-500 pl-2">Contexte</h3>
-                    <p id="modal-desc" class="text-slate-400 text-sm leading-relaxed">
-                        Description...
-                    </p>
-                </div>
-
-            </div>
-
-            <div class="p-4 border-t border-slate-800 bg-slate-900 flex justify-end">
-                <a id="modal-link" href="#" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-lg font-bold shadow-lg shadow-indigo-600/20 flex items-center gap-2 transition-all hover:scale-105">
-                    Postuler maintenant <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                </a>
-            </div>
-        </div>
-    </div>
-
-    <div id="settings-modal" class="fixed inset-0 bg-black/90 z-50 hidden flex items-center justify-center p-4 backdrop-blur-md">
-        <div class="bg-slate-900 w-full max-w-xl rounded-2xl p-6 border border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="font-bold text-lg text-white"><i class="fa-solid fa-satellite-dish mr-2 text-indigo-500"></i>Configuration & Scan</h3>
-                <button onclick="ui.toggleSettings()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            
-            <p class="text-slate-400 text-sm mb-4">Entrez votre clé API. Le système va récupérer la liste de tous les modèles Google et les tester un par un jusqu'à succès.</p>
-            
-            <div class="mb-4">
-                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Clé API Google Gemini</label>
-                <div class="flex gap-2">
-                    <input type="password" id="api-key-input" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none font-mono text-sm" placeholder="AIzaSy...">
-                    <button onclick="config.startDeepScan()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg font-bold transition-colors text-sm whitespace-nowrap shadow-lg shadow-indigo-600/20">
-                        Scan Total
-                    </button>
-                </div>
-            </div>
-
-            <div class="flex-1 bg-black rounded-lg p-4 border border-slate-800 overflow-y-auto mb-4 min-h-[150px] flex flex-col">
-                <div class="text-slate-500 border-b border-slate-800 pb-2 mb-2 uppercase font-bold text-xs flex justify-between">
-                    <span>Journal Système</span>
-                    <span id="tested-count">0/0</span>
-                </div>
-                <div id="connection-log" class="space-y-0.5 flex-1">
-                    <div class="text-slate-600 console-line">En attente...</div>
-                </div>
-            </div>
-            
-            <button id="save-btn" onclick="config.saveAndClose()" class="w-full bg-green-600 hover:bg-green-500 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                Sauvegarder
-            </button>
-        </div>
-    </div>
-
-    <script src="script.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW Error:', err));
+            });
+        }
+    </script>
 </body>
 </html>
