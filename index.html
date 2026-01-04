@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Agent IA - Smart Router V6</title>
+    <title>Agent IA - System V6</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
@@ -21,12 +21,15 @@
 
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-slate-900 text-slate-200 overflow-hidden">
+<body class="bg-slate-900 text-slate-200 overflow-hidden selection:bg-indigo-500 selection:text-white">
+    
     <div id="root"></div>
+
     <script type="text/babel" src="script.js"></script>
+
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.error));
+            window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(e => console.error(e)));
         }
     </script>
 </body>
