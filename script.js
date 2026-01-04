@@ -1,314 +1,244 @@
-// --- CONFIGURATION ENGINE (DEEP SCAN) ---
-const config = {
-    apiKey: localStorage.getItem('nexus_api_key_v5') || '',
-    activeModel: localStorage.getItem('nexus_active_model_v5') || null,
-    fallbackModels: ['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'],
+const { useState, useEffect, useRef } = React;
+const { jsPDF } = window.jspdf;
 
-    log: (msg, type = 'info') => {
-        const consoleEl = document.getElementById('connection-log');
-        const line = document.createElement('div');
-        line.className = "console-line";
-        if (type === 'error') line.classList.add("text-red-400");
-        else if (type === 'success') line.classList.add("text-green-400", "font-bold");
-        else line.classList.add("text-slate-300");
-        line.innerHTML = `<span class="opacity-30 mr-2">${new Date().toLocaleTimeString().split(' ')[0]}</span>${msg}`;
-        consoleEl.appendChild(line);
-        consoleEl.scrollTop = consoleEl.scrollHeight;
-    },
-
-    startDeepScan: async () => {
-        const keyInput = document.getElementById('api-key-input').value.trim();
-        const countEl = document.getElementById('tested-count');
-        document.getElementById('connection-log').innerHTML = ''; 
-        document.getElementById('save-btn').disabled = true;
-
-        if (!keyInput) { config.log("Erreur: Clé vide", "error"); return; }
-
-        config.log("1. Récupération modèles...", "info");
-        let candidateList = [];
-        try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keyInput}`);
-            if (response.ok) {
-                const data = await response.json();
-                candidateList = data.models.filter(m => m.supportedGenerationMethods?.includes("generateContent")).map(m => m.name.replace('models/', '')).sort().reverse();
-                config.log(`OK: ${candidateList.length} modèles trouvés.`);
-            } else throw new Error();
-        } catch (e) {
-            config.log("Erreur liste API. Utilisation liste secours.");
-            candidateList = config.fallbackModels;
-        }
-
-        config.log("2. Test de connexion...");
-        let workingModel = null;
-        let tested = 0;
-        for (const model of candidateList) {
-            tested++; countEl.innerText = `${tested}/${candidateList.length}`;
-            config.log(`Test: ${model}...`);
-            try {
-                await config.testModel(model, keyInput);
-                workingModel = model;
-                config.log(`>>> SUCCÈS : ${model}`, "success");
-                break;
-            } catch (e) {}
-        }
-
-        if (workingModel) {
-            config.apiKey = keyInput;
-            config.activeModel = workingModel;
-            document.getElementById('save-btn').disabled = false;
-        } else config.log("ECHEC: Aucun modèle valide.", "error");
-    },
-
-    testModel: async (modelName, key) => {
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: "Ping" }] }], generationConfig: { maxOutputTokens: 1 } })
+// --- DB SERVICE (Mémoire) ---
+const dbService = {
+    dbName: 'AgentSystemDB',
+    version: 1,
+    db: null,
+    async init() {
+        if (this.db) return this.db;
+        return new Promise((resolve) => {
+            const req = indexedDB.open(this.dbName, this.version);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('conversations')) db.createObjectStore('conversations', { keyPath: 'id' });
+            };
+            req.onsuccess = (e) => { this.db = e.target.result; resolve(this.db); };
         });
-        if (!r.ok) throw new Error();
     },
-
-    saveAndClose: () => {
-        localStorage.setItem('nexus_api_key_v5', config.apiKey);
-        localStorage.setItem('nexus_active_model_v5', config.activeModel);
-        ui.toggleSettings();
-        ui.addSystemMessage(`Système connecté sur : <b>${config.activeModel}</b>`);
-        ui.updateStatus(true);
+    async saveConversation(conv) {
+        const db = await this.init();
+        const tx = db.transaction('conversations', 'readwrite');
+        tx.objectStore('conversations').put(conv);
     }
 };
 
-// --- UI CONTROLLER ---
-// Global Map to store temporary job data for modals
-const jobDataMap = new Map();
+// --- TUTORIAL MODAL (Style Engin de Levage) ---
+const TutorialModal = ({ onClose }) => {
+    const slides = [
+        { icon: "fa-robot", title: "Agent System V6", desc: "Bienvenue dans votre nouvelle interface unifiée. PWA, Offline, et Analyse de fichiers." },
+        { icon: "fa-key", title: "Configuration", desc: "Cliquez sur la roue crantée pour configurer votre clé API Gemini (Google AI)." },
+        { icon: "fa-file-pdf", title: "Analyse Docs", desc: "Glissez un PDF ou CSV dans le chat. L'IA l'analysera instantanément (RAG Local)." },
+        { icon: "fa-database", title: "Mémoire Locale", desc: "Tout est stocké dans votre appareil via IndexedDB. Rien n'est perdu si vous quittez." }
+    ];
+    const [step, setStep] = useState(0);
 
-const ui = {
-    toggleSettings: () => {
-        const modal = document.getElementById('settings-modal');
-        modal.classList.toggle('hidden');
-        if (!modal.classList.contains('hidden')) document.getElementById('api-key-input').value = config.apiKey;
-    },
-
-    updateStatus: (connected) => {
-        const dot = document.getElementById('status-dot');
-        const text = document.getElementById('model-status');
-        if(connected) {
-            dot.className = "w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]";
-            text.innerText = `Connecté: ${config.activeModel}`;
-            text.className = "text-[10px] text-green-400 font-mono";
-        } else {
-            dot.className = "w-2 h-2 rounded-full bg-red-500";
-            text.innerText = "Déconnecté";
-        }
-    },
-
-    handleFileUpload: (input) => {
-        if(input.files.length > 0) {
-            const names = Array.from(input.files).map(f => f.name).join(', ');
-            ui.addUserMessage(`[Fichiers ajoutés: ${names}]`, true);
-            agent.contextFiles.push(...Array.from(input.files).map(f => f.name));
-        }
-    },
-
-    scrollToBottom: () => {
-        const c = document.getElementById('chat-container');
-        c.scrollTop = c.scrollHeight;
-    },
-
-    addUserMessage: (text, isSystem = false) => {
-        const historyDiv = document.getElementById('chat-history');
-        const div = document.createElement('div');
-        div.className = "flex justify-end fade-in";
-        div.innerHTML = `<div class="${isSystem ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'user-message text-white'} rounded-2xl rounded-tr-none p-3 max-w-[85%] text-sm shadow-lg">${marked.parse(text)}</div>`;
-        historyDiv.appendChild(div);
-        ui.scrollToBottom();
-    },
-
-    addSystemMessage: (contentHtml) => {
-        const historyDiv = document.getElementById('chat-history');
-        const div = document.createElement('div');
-        div.className = "flex gap-4 fade-in w-full";
-        div.innerHTML = `
-            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex-shrink-0 flex items-center justify-center mt-1 shadow-lg shadow-indigo-900/50">
-                <i class="fa-solid fa-robot text-white text-xs"></i>
-            </div>
-            <div class="flex-1 min-w-0 text-sm leading-relaxed space-y-2">${contentHtml}</div>`;
-        historyDiv.appendChild(div);
-        ui.scrollToBottom();
-    },
-
-    toggleLoading: (show) => {
-        document.getElementById('loading-indicator').classList.toggle('hidden', !show);
-        ui.scrollToBottom();
-    },
-
-    // --- JOB MODAL LOGIC ---
-    openJobModal: (jobId) => {
-        const job = jobDataMap.get(jobId);
-        if (!job) return;
-
-        document.getElementById('modal-title').innerText = job.title || "Titre non spécifié";
-        document.getElementById('modal-company').innerText = job.company || "Entreprise confidentielle";
-        document.getElementById('modal-location').innerText = job.location || "Télétravail / Non spécifié";
-        document.getElementById('modal-salary').innerText = job.salary || "N.C.";
-        document.getElementById('modal-contract').innerText = job.contract_type || "Freelance";
-        document.getElementById('modal-duration').innerText = job.duration || "Indéterminée";
-        document.getElementById('modal-source').innerText = job.source || "Web";
-        document.getElementById('modal-desc').innerText = job.description_long || job.description || "Pas de description détaillée.";
-        document.getElementById('modal-link').href = job.url || "#";
-        
-        // Handle Logo
-        const logoImg = document.getElementById('modal-logo');
-        if (job.logo_url && job.logo_url !== "null") {
-            logoImg.src = job.logo_url;
-        } else {
-            // Fallback to name-based logo
-            logoImg.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(job.company || 'Job')}&background=random&color=fff&size=128`;
-        }
-
-        // Handle Missions List
-        const missionList = document.getElementById('modal-missions');
-        missionList.innerHTML = '';
-        if (job.missions && Array.isArray(job.missions)) {
-            job.missions.forEach(m => {
-                const li = document.createElement('li');
-                li.innerText = m;
-                missionList.appendChild(li);
-            });
-        } else {
-            const li = document.createElement('li');
-            li.innerText = "Détails des missions non fournis par l'analyseur.";
-            missionList.appendChild(li);
-        }
-
-        const modal = document.getElementById('job-modal');
-        const content = document.getElementById('job-modal-content');
-        modal.classList.remove('hidden');
-        // Animation
-        setTimeout(() => {
-            content.classList.remove('scale-95', 'opacity-0');
-            content.classList.add('scale-100', 'opacity-100');
-        }, 10);
-    },
-
-    closeJobModal: () => {
-        const modal = document.getElementById('job-modal');
-        const content = document.getElementById('job-modal-content');
-        content.classList.remove('scale-100', 'opacity-100');
-        content.classList.add('scale-95', 'opacity-0');
-        setTimeout(() => modal.classList.add('hidden'), 200);
-    },
-
-    renderWidget: (data) => {
-        if (data.type === 'job_list') {
-            // Create unique IDs for jobs to store in map
-            const renderedItems = data.items.map((job, index) => {
-                const uniqueId = `job_${Date.now()}_${index}`;
-                jobDataMap.set(uniqueId, job);
+    return (
+        <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4">
+            <div className="bg-white text-slate-800 rounded-2xl shadow-2xl max-w-xs w-full p-6 modal-content text-center relative">
+                <button onClick={onClose} className="absolute top-2 right-3 text-slate-300 hover:text-slate-500"><i className="fa-solid fa-times"></i></button>
                 
-                return `
-                    <div class="bg-slate-800 border border-slate-700 p-3 rounded-xl hover:border-indigo-500 transition-colors group relative">
-                        <div class="flex justify-between items-start mb-2">
-                            <div class="flex items-center gap-2 overflow-hidden">
-                                <div class="w-8 h-8 rounded bg-slate-700 flex-shrink-0 flex items-center justify-center text-xs font-bold text-slate-400">
-                                    ${job.company ? job.company.substring(0,2).toUpperCase() : 'JO'}
-                                </div>
-                                <h3 class="font-bold text-indigo-400 truncate pr-2 text-sm">${job.title}</h3>
-                            </div>
-                            <span class="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-400 border border-slate-700 whitespace-nowrap">${job.source || 'Aggr.'}</span>
-                        </div>
-                        <div class="text-xs text-slate-400 mb-2 font-mono flex gap-2 items-center">
-                            <span>${job.company}</span>
-                            <span class="w-1 h-1 bg-slate-600 rounded-full"></span>
-                            <span class="text-green-400">${job.salary || 'N.C.'}</span>
-                        </div>
-                        <p class="text-xs text-slate-300 line-clamp-2 mb-3">${job.description}</p>
-                        <div class="pt-2 border-t border-slate-700/50 flex justify-end">
-                            <button onclick="ui.openJobModal('${uniqueId}')" class="text-xs bg-indigo-600/20 text-indigo-300 px-3 py-1.5 rounded hover:bg-indigo-600 hover:text-white transition-colors font-medium">
-                                Voir les détails
-                            </button>
+                {/* Icon Circle */}
+                <div className="bg-indigo-100 text-indigo-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-inner">
+                    <i className={`fa-solid ${slides[step].icon}`}></i>
+                </div>
+                
+                <h3 className="text-xl font-bold mb-2 text-slate-800">{slides[step].title}</h3>
+                <p className="text-slate-500 text-sm mb-6 h-12 leading-relaxed">{slides[step].desc}</p>
+                
+                {/* Dots */}
+                <div className="flex justify-center gap-1.5 mb-6">
+                    {slides.map((_, i) => (
+                        <div key={i} className={`h-1.5 rounded-full transition-all ${i === step ? 'w-6 bg-indigo-600' : 'w-1.5 bg-slate-200'}`}></div>
+                    ))}
+                </div>
+
+                <button 
+                    onClick={() => step < slides.length - 1 ? setStep(step + 1) : onClose()}
+                    className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200"
+                >
+                    {step === slides.length - 1 ? "Compris ! ✅" : "Suivant"}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// --- APP COMPONENT ---
+const App = () => {
+    const [messages, setMessages] = useState([{ role: 'system', text: "👋 **Système V6 prêt.**\nImportez un fichier ou posez une question." }]);
+    const [input, setInput] = useState("");
+    const [files, setFiles] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
+    const [showTutorial, setShowTutorial] = useState(false);
+    
+    // Config
+    const [apiKey, setApiKey] = useState(localStorage.getItem('agent_ia_apikey') || '');
+    const [model, setModel] = useState(localStorage.getItem('agent_ia_model') || 'gemini-1.5-flash');
+
+    useEffect(() => {
+        dbService.init();
+        if (!localStorage.getItem('agent_ia_tuto_done')) setShowTutorial(true);
+    }, []);
+
+    // Actions
+    const handleRefresh = () => {
+        // Animation visuelle puis reload (Style Investissement)
+        const btn = document.getElementById('btn-refresh');
+        if(btn) btn.classList.add('spin-once');
+        setTimeout(() => window.location.reload(), 800);
+    };
+
+    const handleSend = async () => {
+        if (!input.trim() && files.length === 0) return;
+        if (!apiKey) return setShowSettings(true);
+
+        const newMsg = { role: 'user', text: input, files: files.map(f => f.name) };
+        const updatedMsgs = [...messages, newMsg];
+        setMessages(updatedMsgs);
+        setInput("");
+        setIsLoading(true);
+
+        // Prepare Prompt
+        let fileContext = "";
+        if (files.length > 0) fileContext = "\n\n--- FICHIERS ---\n" + files.map(f => `[${f.name}]\n${f.content}`).join("\n\n");
+        const fullPrompt = `${input} ${fileContext}`;
+
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] })
+            });
+            const data = await response.json();
+            if (data.error) throw new Error(data.error.message);
+            
+            const aiText = data.candidates[0].content.parts[0].text;
+            const finalMsgs = [...updatedMsgs, { role: 'model', text: aiText }];
+            setMessages(finalMsgs);
+            dbService.saveConversation({ id: Date.now(), title: input.slice(0, 30), messages: finalMsgs, timestamp: Date.now() });
+        } catch (error) {
+            setMessages(prev => [...prev, { role: 'system', text: `❌ **Erreur:** ${error.message}` }]);
+        } finally {
+            setIsLoading(false);
+            setFiles([]);
+        }
+    };
+
+    const handleFile = async (e) => {
+        const list = Array.from(e.target.files || e.dataTransfer.files);
+        const processed = await Promise.all(list.map(f => new Promise(r => {
+            const reader = new FileReader();
+            reader.onload = (e) => r({ name: f.name, content: e.target.result });
+            reader.readAsText(f);
+        })));
+        setFiles(prev => [...prev, ...processed]);
+    };
+
+    return (
+        <div className="h-screen flex flex-col relative" onDragOver={e => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e); }}>
+            
+            {/* --- HEADER --- */}
+            <header className="h-16 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between px-4 z-20 shadow-sm">
+                <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                        <i className="fa-solid fa-robot text-white text-sm"></i>
+                    </div>
+                    <div>
+                        <h1 className="font-bold text-sm tracking-wide text-slate-100">AGENT IA</h1>
+                        <div className="flex items-center gap-1 text-[10px] text-slate-500 font-mono">
+                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span> V6.0 ONLINE
                         </div>
                     </div>
-                `;
-            }).join('');
+                </div>
 
-            return `
-                <div class="mb-2 text-slate-300">Offres trouvées :</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    ${renderedItems}
-                </div>`;
-        } else if (data.type === 'images') {
-            return `
-                <div class="mb-2 text-slate-300">Inspirations pour : <span class="italic text-indigo-400">${data.query}</span></div>
-                <div class="grid grid-cols-2 gap-2">
-                    ${data.keywords.map(k => `
-                        <div class="aspect-video bg-slate-800 rounded-lg overflow-hidden relative border border-slate-700 group">
-                            <img src="https://source.unsplash.com/400x300/?${encodeURIComponent(k)}" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-all duration-500 group-hover:scale-110" onerror="this.parentElement.style.display='none'">
-                            <div class="absolute bottom-0 w-full bg-gradient-to-t from-black/80 to-transparent p-2 pt-4 text-[10px] text-white truncate font-mono">${k}</div>
+                {/* ACTION BUTTONS */}
+                <div className="flex items-center gap-2">
+                    <button id="btn-refresh" onClick={handleRefresh} className="btn-icon" title="Rafraîchir l'application">
+                        <i className="fa-solid fa-arrows-rotate"></i>
+                    </button>
+                    <button onClick={() => setShowTutorial(true)} className="btn-icon" title="Info / Tutoriel">
+                        <i className="fa-solid fa-info"></i>
+                    </button>
+                    <div className="w-px h-6 bg-slate-700 mx-1"></div>
+                    <button onClick={() => setShowSettings(true)} className={`btn-icon ${!apiKey ? 'text-red-400 bg-red-400/10 animate-pulse' : ''}`}>
+                        <i className="fa-solid fa-gear"></i>
+                    </button>
+                </div>
+            </header>
+
+            {/* --- CHAT --- */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-32">
+                {messages.map((m, i) => (
+                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] rounded-2xl p-4 shadow-sm ${m.role === 'user' ? 'message-user' : 'message-ai'}`}>
+                            <div className="prose prose-invert text-sm" dangerouslySetInnerHTML={{ __html: marked.parse(m.text) }}></div>
+                            {m.files && m.files.length > 0 && (
+                                <div className="mt-2 text-xs opacity-70 border-t border-white/20 pt-1">📎 {m.files.length} fichier(s)</div>
+                            )}
                         </div>
-                    `).join('')}
-                </div>`;
-        }
-        return `<div class="glass-message rounded-2xl rounded-tl-none p-4">${marked.parse(data.content || "")}</div>`;
-    }
-};
+                    </div>
+                ))}
+                {isLoading && <div className="ml-2 text-indigo-400 text-xs animate-pulse">L'agent réfléchit...</div>}
+            </div>
 
-// --- AGENT BRAIN ---
-const agent = {
-    contextFiles: [],
-    send: async () => {
-        const input = document.getElementById('user-input');
-        const text = input.value.trim();
-        if (!text || !config.apiKey || !config.activeModel) { if(!text) return; ui.toggleSettings(); return; }
+            {/* --- INPUT --- */}
+            <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-[#0b1121] via-[#0b1121] to-transparent z-10">
+                <div className="max-w-3xl mx-auto glass-panel rounded-2xl p-2 flex flex-col gap-2">
+                    {files.length > 0 && (
+                        <div className="flex gap-2 px-2 overflow-x-auto pb-1">
+                            {files.map((f, i) => <span key={i} className="text-[10px] bg-slate-700 px-2 py-1 rounded text-slate-300 truncate max-w-[100px]">{f.name}</span>)}
+                        </div>
+                    )}
+                    <div className="flex items-end gap-2">
+                        <label className="p-3 text-slate-400 hover:text-white cursor-pointer transition">
+                            <i className="fa-solid fa-paperclip"></i>
+                            <input type="file" multiple className="hidden" onChange={handleFile} />
+                        </label>
+                        <textarea 
+                            value={input} onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}}
+                            placeholder="Message..."
+                            className="flex-1 bg-transparent border-none outline-none text-white resize-none py-3 h-12 max-h-32"
+                        ></textarea>
+                        <button onClick={handleSend} disabled={isLoading} className="bg-indigo-600 hover:bg-indigo-500 text-white p-3 rounded-xl transition shadow-lg">
+                            <i className="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-        input.value = ''; ui.addUserMessage(text); ui.toggleLoading(true);
-
-        // ULTRA-DETAILED SYSTEM PROMPT
-        const systemPrompt = `
-        Rôle: Assistant Freelance. Réponds UNIQUEMENT en JSON (PAS DE MARKDOWN).
-        
-        SI OFFRE EMPLOI/MISSION (Génère/Trouve 3-4 offres):
-        {
-            "type": "job_list",
-            "items": [
-                {
-                    "title": "Titre précis",
-                    "company": "Nom Entreprise",
-                    "salary": "TJM ou Salaire (ex: 600€/j)",
-                    "duration": "Durée (ex: 6 mois)",
-                    "contract_type": "Freelance / CDI / Intérim",
-                    "location": "Ville / Télétravail",
-                    "source": "LinkedIn / Indeed / Malt",
-                    "description": "Accroche courte (2 lignes max)",
-                    "description_long": "Paragraphe détaillé du contexte du projet...",
-                    "missions": ["Mission 1 précise", "Mission 2", "Mission 3"],
-                    "logo_url": "URL du logo (ou null)",
-                    "url": "https://fake-link-for-demo.com"
-                }
-            ]
-        }
-        
-        SI IMAGES: { "type": "images", "query": "Sujet", "keywords": ["k1_en", "k2_en"] }
-        SINON TEXTE: { "type": "text", "content": "Réponse markdown..." }
-        
-        Contexte Fichiers: ${agent.contextFiles.join(', ')}
-        `;
-
-        try {
-            const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.activeModel}:generateContent?key=${config.apiKey}`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: systemPrompt + "\nUser Query: " + text }] }] })
-            });
-            const d = await r.json();
-            if(d.error) throw new Error(d.error.message);
+            {/* --- MODALS --- */}
+            {showTutorial && <TutorialModal onClose={() => { localStorage.setItem('agent_ia_tuto_done', 'true'); setShowTutorial(false); }} />}
             
-            let raw = d.candidates[0].content.parts[0].text.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
-            try { ui.addSystemMessage(ui.renderWidget(JSON.parse(raw))); } 
-            catch(e) { ui.addSystemMessage(`<div class="glass-message p-4">${marked.parse(raw)}</div>`); }
-        } catch (e) {
-            ui.addSystemMessage(`<div class="text-red-400 text-xs p-3 border border-red-500/50 rounded bg-slate-800">Erreur: ${e.message}</div>`);
-        }
-        ui.toggleLoading(false);
-    }
+            {showSettings && (
+                <div className="fixed inset-0 modal-overlay flex items-center justify-center p-4">
+                    <div className="bg-slate-900 border border-slate-700 w-full max-w-sm p-6 rounded-xl shadow-2xl modal-content">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-lg font-bold text-white">Paramètres</h2>
+                            <button onClick={() => setShowSettings(false)} className="text-slate-500 hover:text-white"><i className="fa-solid fa-times"></i></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">API Key</label>
+                                <input type="password" value={apiKey} onChange={e => { setApiKey(e.target.value); localStorage.setItem('agent_ia_apikey', e.target.value); }} className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white mt-1" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Modèle</label>
+                                <select value={model} onChange={e => { setModel(e.target.value); localStorage.setItem('agent_ia_model', e.target.value); }} className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white mt-1">
+                                    <option value="gemini-1.5-flash">Gemini 1.5 Flash (Rapide)</option>
+                                    <option value="gemini-1.5-pro">Gemini 1.5 Pro (Intelligent)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 };
 
-document.getElementById('user-input').addEventListener('keypress', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agent.send(); } });
-if (config.apiKey && config.activeModel) ui.updateStatus(true); else setTimeout(() => ui.toggleSettings(), 800);
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
