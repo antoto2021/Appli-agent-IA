@@ -1,32 +1,30 @@
 /**
  * =================================================================
- * NEXUS AGENT V6.2 - PRECISION LINK EDITION
+ * NEXUS AGENT V6.3 - SAFE LINKS EDITION
  * =================================================================
- * Correctifs :
- * 1. Prompt "URL Extractor" : Force l'IA à récupérer le lien source exact.
- * 2. Fallback "Deep Search" : Si le lien échoue, génère une requête ciblée.
- * 3. Nettoyage JSON renforcé pour éviter les erreurs de parsing.
+ * Changement de paradigme :
+ * 1. On ne demande plus d'URL à l'IA (trop d'hallucinations).
+ * 2. On génère nous-mêmes 3 liens de recherche (Google, LinkedIn, Indeed).
+ * 3. Ces liens ne peuvent PAS faire d'erreur 404.
  */
 
 // ==========================================
-// 1. CONFIGURATION & SYSTÈME
+// 1. CONFIGURATION
 // ==========================================
 const config = {
     apiKey: localStorage.getItem('nexus_api_key_v5') || '',
     activeModel: localStorage.getItem('nexus_active_model_v5') || null,
-    
-    // On privilégie les modèles PRO pour la précision des liens
-    fallbackModels: ['gemini-1.5-pro', 'gemini-1.5-pro-latest', 'gemini-1.5-flash'],
-    
+    fallbackModels: ['gemini-1.5-pro', 'gemini-1.5-flash'],
     githubUser: 'antoto2021',
     githubRepo: 'Appli-agent-ia',
-    localHash: localStorage.getItem('nexus_app_hash') || 'v6.2_precision_link',
+    localHash: 'v6.3_safe_links',
 
     init: () => {
         const el = document.getElementById('info-local-v');
         if(el) el.innerText = config.localHash;
     },
 
+    // --- LOGGING ---
     log: (msg, type = 'info') => {
         const consoleEl = document.getElementById('connection-log');
         const line = document.createElement('div');
@@ -39,7 +37,7 @@ const config = {
         consoleEl.scrollTop = consoleEl.scrollHeight;
     },
 
-    // --- SCANNER INTELLIGENT ---
+    // --- DEEP SCAN ---
     startDeepScan: async () => {
         const keyInput = document.getElementById('api-key-input').value.trim();
         const countEl = document.getElementById('tested-count');
@@ -48,7 +46,7 @@ const config = {
 
         if (!keyInput) { config.log("Erreur: Clé vide", "error"); return; }
 
-        config.log("1. Récupération des modèles...", "info");
+        config.log("1. Récupération modèles...", "info");
         let candidateList = [];
         
         try {
@@ -66,7 +64,7 @@ const config = {
             candidateList = config.fallbackModels;
         }
 
-        config.log("2. Recherche compatibilité Google Search...");
+        config.log("2. Test de connexion...");
         let workingModel = null;
         let tested = 0;
         
@@ -74,7 +72,6 @@ const config = {
             tested++; 
             countEl.innerText = `${tested}/${candidateList.length}`;
             config.log(`Test: ${model}...`);
-            
             try {
                 await config.testModel(model, keyInput);
                 workingModel = model;
@@ -101,38 +98,32 @@ const config = {
         if (!r.ok) throw new Error();
     },
 
+    saveAndClose: () => {
+        localStorage.setItem('nexus_api_key_v5', config.apiKey);
+        localStorage.setItem('nexus_active_model_v5', config.activeModel);
+        ui.toggleSettings();
+        ui.addSystemMessage(`Système connecté sur : <b>${config.activeModel}</b><br><span class="text-xs opacity-70">Mode Smart Links Activé.</span>`);
+        ui.updateStatus(true);
+    },
+    
+    // Ajout de la fonction checkUpdate manquante
     checkUpdate: async () => {
         const remoteDisplay = document.getElementById('info-remote-v');
         remoteDisplay.innerText = "Checking...";
-        remoteDisplay.classList.add("animate-pulse");
         try {
             const response = await fetch(`https://api.github.com/repos/${config.githubUser}/${config.githubRepo}/commits/main`);
             if(response.ok) {
                 const data = await response.json();
                 const shortHash = data.sha.substring(0, 7);
                 remoteDisplay.innerText = shortHash;
-                remoteDisplay.classList.remove("animate-pulse");
                 localStorage.setItem('nexus_app_hash', shortHash);
-                if(shortHash !== config.localHash) remoteDisplay.innerHTML += " <span class='text-amber-400'>(Update!)</span>";
-                else remoteDisplay.innerHTML += " <span class='text-slate-500'>(À jour)</span>";
-            } else throw new Error();
-        } catch (e) {
-            remoteDisplay.innerText = "Erreur réseau";
-            remoteDisplay.classList.add('text-red-400');
-        }
-    },
-
-    saveAndClose: () => {
-        localStorage.setItem('nexus_api_key_v5', config.apiKey);
-        localStorage.setItem('nexus_active_model_v5', config.activeModel);
-        ui.toggleSettings();
-        ui.addSystemMessage(`Système connecté sur : <b>${config.activeModel}</b><br><span class="text-xs opacity-70">Extraction de liens V6.2 activée.</span>`);
-        ui.updateStatus(true);
+            }
+        } catch (e) { remoteDisplay.innerText = "Err"; }
     }
 };
 
 // ==========================================
-// 2. INTERFACE UTILISATEUR (UI)
+// 2. UI & LOGIQUE DE LIENS
 // ==========================================
 const jobDataMap = new Map();
 
@@ -142,48 +133,26 @@ const ui = {
         modal.classList.toggle('hidden');
         if (!modal.classList.contains('hidden')) document.getElementById('api-key-input').value = config.apiKey;
     },
-
     toggleInfo: () => {
         const modal = document.getElementById('info-modal');
         modal.classList.toggle('hidden');
-        if (!modal.classList.contains('hidden')) config.init();
+        if(!modal.classList.contains('hidden')) config.init();
     },
-
     refreshApp: () => {
-        const btn = document.getElementById('btn-refresh');
-        btn.classList.add('spin-once');
+        document.getElementById('btn-refresh').classList.add('spin-once');
         setTimeout(() => window.location.reload(), 800);
     },
-
     exportPDF: () => {
-        if (!window.jspdf) return alert('Erreur PDF Lib');
+        if (!window.jspdf) return alert('Erreur PDF');
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
-        doc.setFontSize(10);
-        let y = 10;
-        document.querySelectorAll('#chat-history > div').forEach(div => {
-             const text = div.innerText.replace(/\n/g, ' ');
-             const lines = doc.splitTextToSize(text, 180);
-             doc.text(lines, 10, y);
-             y += (lines.length * 5) + 5;
-             if (y > 280) { doc.addPage(); y = 10; }
-        });
-        doc.save(`Nexus_Rapport_${Date.now()}.pdf`);
+        doc.text(document.getElementById('chat-history').innerText, 10, 10);
+        doc.save('export.pdf');
     },
-
-    updateStatus: (connected) => {
-        const dot = document.getElementById('status-dot');
-        const text = document.getElementById('model-status');
-        if(connected) {
-            dot.className = "w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]";
-            text.innerText = `Online: ${config.activeModel}`;
-            text.className = "text-[10px] text-green-400 font-mono";
-        } else {
-            dot.className = "w-2 h-2 rounded-full bg-red-500";
-            text.innerText = "Déconnecté";
-        }
+    updateStatus: (c) => {
+        document.getElementById('status-dot').className = c ? "w-2 h-2 rounded-full bg-green-500" : "w-2 h-2 rounded-full bg-red-500";
+        document.getElementById('model-status').innerText = c ? `Online: ${config.activeModel}` : "Déconnecté";
     },
-
     handleFileUpload: (input) => {
         if(input.files.length > 0) {
             const names = Array.from(input.files).map(f => f.name).join(', ');
@@ -191,98 +160,85 @@ const ui = {
             agent.contextFiles.push(...Array.from(input.files).map(f => f.name));
         }
     },
-
     scrollToBottom: () => {
         const c = document.getElementById('chat-container');
         c.scrollTop = c.scrollHeight;
     },
-
-    addUserMessage: (text, isSystem = false) => {
-        const historyDiv = document.getElementById('chat-history');
+    addUserMessage: (text) => {
         const div = document.createElement('div');
         div.className = "flex justify-end fade-in";
-        div.innerHTML = `<div class="${isSystem ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'user-message text-white'} rounded-2xl rounded-tr-none p-3 max-w-[85%] text-sm shadow-lg"><div class="prose prose-invert">${marked.parse(text)}</div></div>`;
-        historyDiv.appendChild(div);
+        div.innerHTML = `<div class="user-message text-white rounded-2xl rounded-tr-none p-3 max-w-[85%] text-sm shadow-lg"><div class="prose prose-invert">${marked.parse(text)}</div></div>`;
+        document.getElementById('chat-history').appendChild(div);
         ui.scrollToBottom();
     },
-
-    addSystemMessage: (contentHtml) => {
-        const historyDiv = document.getElementById('chat-history');
+    addSystemMessage: (html) => {
         const div = document.createElement('div');
         div.className = "flex gap-4 fade-in w-full";
-        div.innerHTML = `
-            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex-shrink-0 flex items-center justify-center mt-1 shadow-lg shadow-indigo-900/50">
-                <i class="fa-solid fa-robot text-white text-xs"></i>
-            </div>
-            <div class="flex-1 min-w-0 text-sm leading-relaxed space-y-2"><div class="prose prose-invert">${contentHtml}</div></div>`;
-        historyDiv.appendChild(div);
+        div.innerHTML = `<div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex-shrink-0 flex items-center justify-center mt-1"><i class="fa-solid fa-robot text-white text-xs"></i></div><div class="flex-1 min-w-0 text-sm leading-relaxed space-y-2"><div class="prose prose-invert">${html}</div></div>`;
+        document.getElementById('chat-history').appendChild(div);
         ui.scrollToBottom();
     },
+    toggleLoading: (show) => document.getElementById('loading-indicator').classList.toggle('hidden', !show),
 
-    toggleLoading: (show) => {
-        document.getElementById('loading-indicator').classList.toggle('hidden', !show);
-        ui.scrollToBottom();
-    },
-
-    // --- LOGIQUE MODALE OFFRE (Cœur de la correction) ---
+    // --- LE COEUR DE LA SOLUTION : MODALE & LIENS ---
     openJobModal: (jobId) => {
         const job = jobDataMap.get(jobId);
         if (!job) return;
 
+        // Remplissage des champs
         document.getElementById('modal-title').innerText = job.title || "Poste";
         document.getElementById('modal-company').innerText = job.company || "Entreprise";
         document.getElementById('modal-location').innerText = job.location || "Lieu non précisé";
-        document.getElementById('modal-salary').innerText = job.salary || "Non communiqué";
-        document.getElementById('modal-contract').innerText = job.contract_type || "Type contrat inconnu";
+        document.getElementById('modal-salary').innerText = job.salary || "N.C.";
+        document.getElementById('modal-contract').innerText = job.contract_type || "Type inconnu";
         document.getElementById('modal-duration').innerText = job.duration || "Indéterminé";
         document.getElementById('modal-source').innerText = job.source || "Web";
-        
-        // Contenu riche
-        document.getElementById('modal-desc').innerHTML = marked.parse(job.description_long || job.description || "Pas de détails.");
-
-        // --- INTELLIGENT DEEP LINKING (Le Correctif) ---
-        // 1. Si l'IA nous a donné une URL valide et longue (pas juste "linkedin.com"), on l'utilise.
-        let finalUrl = job.url;
-        
-        // 2. Si l'URL est suspecte (trop courte, placeholder "SEARCH", ou domaine racine), on bascule sur la recherche ciblée.
-        const isUrlSuspicious = !finalUrl || finalUrl === 'SEARCH' || finalUrl.includes('fake') || finalUrl.length < 20 || (finalUrl.includes('indeed.com') && !finalUrl.includes('viewjob'));
-        
-        if (isUrlSuspicious) {
-            // Construction d'une requête "Dorks" pour cibler la page exacte
-            // Exemple : site:indeed.com "Développeur" "Google"
-            const qTitle = job.title.replace(/[^a-zA-Z0-9 ]/g, ''); // Nettoyage
-            const qCompany = job.company.replace(/[^a-zA-Z0-9 ]/g, '');
-            
-            // On privilégie la source détectée
-            let siteFilter = "";
-            if (job.source && job.source.toLowerCase().includes('linkedin')) siteFilter = "site:linkedin.com/jobs";
-            else if (job.source && job.source.toLowerCase().includes('indeed')) siteFilter = "site:indeed.com";
-            else if (job.source && job.source.toLowerCase().includes('welcome')) siteFilter = "site:welcometothejungle.com";
-            
-            const query = encodeURIComponent(`${siteFilter} "${qTitle}" "${qCompany}"`);
-            finalUrl = `https://www.google.com/search?q=${query}`;
-        }
-
-        const linkBtn = document.getElementById('modal-link');
-        linkBtn.href = finalUrl;
-        linkBtn.innerHTML = isUrlSuspicious 
-            ? `Trouver l'annonce (Recherche Ciblée) <i class="fa-solid fa-magnifying-glass ml-2"></i>` 
-            : `Postuler (Lien Direct) <i class="fa-solid fa-arrow-up-right-from-square ml-2"></i>`;
+        document.getElementById('modal-desc').innerHTML = marked.parse(job.description_long || job.description || "Détails non fournis.");
 
         // Logo
         const logoImg = document.getElementById('modal-logo');
         if (job.logo_url && job.logo_url !== "null") logoImg.src = job.logo_url;
         else logoImg.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(job.company || 'Job')}&background=random&color=fff&size=128`;
 
-        // Missions List
+        // Missions
         const missionList = document.getElementById('modal-missions');
         missionList.innerHTML = '';
-        if (job.missions && Array.isArray(job.missions) && job.missions.length > 0) {
-            job.missions.forEach(m => {
-                const li = document.createElement('li'); li.innerText = m; missionList.appendChild(li);
-            });
-        } else {
-            missionList.innerHTML = "<li class='italic text-slate-500'>Voir description complète ci-dessous</li>";
+        if (job.missions && job.missions.length) {
+            job.missions.forEach(m => { const li = document.createElement('li'); li.innerText = m; missionList.appendChild(li); });
+        } else missionList.innerHTML = "<li class='text-slate-500 italic'>Voir la description complète.</li>";
+
+        // --- GÉNÉRATION DES 3 LIENS SÉCURISÉS ---
+        const qTitle = encodeURIComponent(job.title);
+        const qCompany = encodeURIComponent(job.company);
+        const qFull = encodeURIComponent(`${job.title} ${job.company}`);
+        const qLoc = encodeURIComponent(job.location || "");
+
+        // 1. Google Jobs (Le plus fiable pour l'agrégation)
+        const googleLink = `https://www.google.com/search?ibp=htl;jobs&q=${qFull}`;
+        
+        // 2. LinkedIn (Recherche filtrée)
+        const linkedinLink = `https://www.linkedin.com/jobs/search/?keywords=${qFull}&location=${qLoc}`;
+
+        // 3. Indeed (Recherche filtrée)
+        const indeedLink = `https://fr.indeed.com/jobs?q=${qTitle}+${qCompany}&l=${qLoc}`;
+
+        // Injection des boutons dans le nouveau Footer
+        const actionsDiv = document.getElementById('modal-actions');
+        if(actionsDiv) {
+            actionsDiv.innerHTML = `
+                <a href="${googleLink}" target="_blank" class="flex flex-col items-center justify-center bg-slate-800 hover:bg-slate-700 p-2 rounded-lg border border-slate-700 transition-colors group">
+                    <i class="fa-brands fa-google text-lg text-white group-hover:text-blue-400 mb-1"></i>
+                    <span class="text-[10px] text-slate-400 font-bold">Google Jobs</span>
+                </a>
+                <a href="${linkedinLink}" target="_blank" class="flex flex-col items-center justify-center bg-slate-800 hover:bg-[#0a66c2] p-2 rounded-lg border border-slate-700 transition-colors group">
+                    <i class="fa-brands fa-linkedin text-lg text-white mb-1"></i>
+                    <span class="text-[10px] text-slate-400 group-hover:text-white font-bold">LinkedIn</span>
+                </a>
+                <a href="${indeedLink}" target="_blank" class="flex flex-col items-center justify-center bg-slate-800 hover:bg-[#2557a7] p-2 rounded-lg border border-slate-700 transition-colors group">
+                    <span class="text-lg font-bold text-white mb-1 font-serif">i</span>
+                    <span class="text-[10px] text-slate-400 group-hover:text-white font-bold">Indeed</span>
+                </a>
+            `;
         }
 
         const modal = document.getElementById('job-modal');
@@ -308,7 +264,7 @@ const ui = {
                 const id = `job_${Date.now()}_${index}`;
                 jobDataMap.set(id, job);
                 return `
-                    <div class="bg-slate-800 border border-slate-700 p-3 rounded-xl hover:border-indigo-500 transition-colors group relative flex flex-col h-full">
+                    <div class="bg-slate-800 border border-slate-700 p-3 rounded-xl hover:border-indigo-500 transition-colors flex flex-col h-full">
                         <div class="flex justify-between items-start mb-2">
                             <div class="flex items-center gap-2 overflow-hidden">
                                 <div class="w-8 h-8 rounded bg-slate-700 flex-shrink-0 flex items-center justify-center text-xs font-bold text-slate-400">
@@ -316,7 +272,6 @@ const ui = {
                                 </div>
                                 <h3 class="font-bold text-indigo-400 truncate pr-2 text-sm">${job.title}</h3>
                             </div>
-                            <span class="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-400 border border-slate-700 whitespace-nowrap">${job.source || 'Web'}</span>
                         </div>
                         <div class="text-xs text-slate-400 mb-2 font-mono flex gap-2 items-center">
                             <span>${job.company}</span>
@@ -325,63 +280,41 @@ const ui = {
                         </div>
                         <p class="text-xs text-slate-300 line-clamp-3 mb-3 flex-1">${job.description}</p>
                         <div class="pt-2 border-t border-slate-700/50 flex justify-end">
-                            <button onclick="ui.openJobModal('${id}')" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded transition-colors font-medium w-full shadow-lg">
-                                Détails & Postuler
+                            <button onclick="ui.openJobModal('${id}')" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded font-medium w-full shadow-lg">
+                                Voir Détails & Postuler
                             </button>
                         </div>
                     </div>
                 `;
             }).join('');
-            return `<div class="mb-2 text-slate-300">🔎 Offres trouvées :</div><div class="grid grid-cols-1 md:grid-cols-2 gap-3">${items}</div>`;
+            return `<div class="mb-2 text-slate-300">🔎 Offres détectées :</div><div class="grid grid-cols-1 md:grid-cols-2 gap-3">${items}</div>`;
         }
         else if (data.type === 'images') {
-            return `
-                <div class="mb-2 text-slate-300">Inspirations : ${data.query}</div>
-                <div class="grid grid-cols-2 gap-2">
-                    ${data.keywords.map(k => `
-                        <div class="aspect-video bg-slate-800 rounded-lg overflow-hidden relative border border-slate-700">
-                            <img src="https://source.unsplash.com/400x300/?${encodeURIComponent(k)}" class="w-full h-full object-cover opacity-80 hover:opacity-100 transition-all">
-                            <div class="absolute bottom-0 w-full bg-gradient-to-t from-black/80 to-transparent p-1 text-[10px] text-white truncate">${k}</div>
-                        </div>`).join('')}
-                </div>`;
+            return `<div class="grid grid-cols-2 gap-2">${data.keywords.map(k=>`<div class="aspect-video bg-slate-800 rounded relative overflow-hidden"><img src="https://source.unsplash.com/400x300/?${encodeURIComponent(k)}" class="w-full h-full object-cover"><span class="absolute bottom-0 w-full bg-black/50 text-[10px] text-white p-1 truncate">${k}</span></div>`).join('')}</div>`;
         }
         return `<div class="glass-message rounded-2xl rounded-tl-none p-4">${marked.parse(data.content || "")}</div>`;
     }
 };
 
 // ==========================================
-// 3. MOTEUR IA (AGENT + GOOGLE GROUNDING)
+// 3. AGENT IA
 // ==========================================
 const agent = {
     contextFiles: [],
-    
     send: async () => {
         const input = document.getElementById('user-input');
         const text = input.value.trim();
-        
-        if (!text || !config.apiKey || !config.activeModel) { 
-            if(!text) return; 
-            ui.toggleSettings(); 
-            return; 
-        }
+        if (!text || !config.apiKey || !config.activeModel) { if(!text) return; ui.toggleSettings(); return; }
 
-        input.value = ''; 
-        ui.addUserMessage(text); 
-        ui.toggleLoading(true);
+        input.value = ''; ui.addUserMessage(text); ui.toggleLoading(true);
 
-        // --- SYSTEM PROMPT (ANTI-FAKE LINK) ---
+        // SYSTEM PROMPT : On ne demande plus d'URL à l'IA pour éviter les hallucinations.
+        // On demande du contenu riche (description) pour l'affichage.
         const systemPrompt = `
-        Rôle: Chasseur de Têtes Expert.
+        Rôle: Chasseur de Têtes Senior.
+        Objectif: Trouver des offres RÉELLES sur le web (Google Search).
         
-        TACHE PRINCIPALE:
-        Trouve des offres d'emploi réelles sur le Web via Google Search.
-        
-        IMPORTANT - GESTION DES LIENS:
-        1. Tu DOIS essayer de copier l'URL exacte de l'offre (commençant par https://...).
-        2. SI TU NE PEUX PAS copier l'URL exacte, écris "SEARCH" dans le champ 'url'. NE PAS INVENTER D'URL.
-        3. Copie INTÉGRALEMENT la description de l'offre (long texte).
-        
-        FORMAT DE REPONSE (JSON STRICT):
+        FORMAT JSON STRICT:
         {
             "type": "job_list",
             "items": [
@@ -389,17 +322,17 @@ const agent = {
                     "title": "Titre exact",
                     "company": "Entreprise",
                     "location": "Ville",
-                    "salary": "Salaire",
-                    "contract_type": "Type",
-                    "source": "Source (ex: LinkedIn)",
-                    "url": "URL_EXACTE_OU_SEARCH", 
-                    "description": "Accroche courte",
-                    "description_long": "TEXTE COMPLET DE L'ANNONCE...",
-                    "missions": ["Mission 1", "Mission 2"]
+                    "salary": "Salaire estimé",
+                    "contract_type": "CDI/Freelance/...",
+                    "source": "Site trouvé (ex: HelloWork)",
+                    "description": "Phrase d'accroche (20 mots)",
+                    "description_long": "COPIE ICI LE TEXTE COMPLET DE L'OFFRE (Minimum 100 mots). C'est crucial pour l'utilisateur.",
+                    "missions": ["Liste", "des", "tâches"]
                 }
             ]
         }
         
+        Si pas d'offre: { "type": "text", "content": "Explication..." }
         Contexte Fichiers: ${agent.contextFiles.join(', ')}
         `;
 
@@ -419,14 +352,12 @@ const agent = {
         };
 
         try {
+            // Tentative avec Search
             let d;
-            try {
-                // Essai avec Google Search
-                d = await executeRequest(true); 
-            } catch (searchError) {
-                console.warn("Mode Search échoué, repli...", searchError);
-                ui.addSystemMessage(`<div class="text-[10px] text-amber-500 mb-2 italic">⚠️ Mode Recherche limité. Résultats théoriques.</div>`);
-                d = await executeRequest(false);
+            try { d = await executeRequest(true); } 
+            catch (e) { 
+                ui.addSystemMessage(`<div class="text-[10px] text-amber-500 italic">⚠️ Recherche Web indisponible. Mode connaissance.</div>`);
+                d = await executeRequest(false); 
             }
             
             let rawText = d.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -434,27 +365,22 @@ const agent = {
             
             try { 
                 const jsonData = JSON.parse(cleanJson);
-                if(jsonData.type === 'job_list' && jsonData.items.length === 0) throw new Error("Empty list");
+                if(jsonData.type === 'job_list' && jsonData.items.length === 0) throw new Error("Empty");
                 ui.addSystemMessage(ui.renderWidget(jsonData)); 
             } catch(e) { 
                 ui.addSystemMessage(`<div class="glass-message p-4">${marked.parse(rawText)}</div>`); 
             }
 
-        } catch (finalError) {
-            ui.addSystemMessage(`<div class="text-red-400 text-xs p-3 border border-red-500/50 rounded bg-slate-800">Erreur : ${finalError.message}</div>`);
+        } catch (e) {
+            ui.addSystemMessage(`<div class="text-red-400 text-xs p-3 bg-slate-800 rounded">Erreur: ${e.message}</div>`);
         }
         ui.toggleLoading(false);
     }
 };
 
-// --- BOOTSTRAP ---
+// Start
 document.getElementById('user-input').addEventListener('keypress', (e) => { 
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agent.send(); } 
 });
-
-if (config.apiKey && config.activeModel) {
-    ui.updateStatus(true);
-    config.init();
-} else {
-    setTimeout(() => ui.toggleSettings(), 800);
-}
+if (config.apiKey && config.activeModel) { ui.updateStatus(true); config.init(); } 
+else setTimeout(() => ui.toggleSettings(), 800);
