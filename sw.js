@@ -1,5 +1,4 @@
-/* --- SW.JS (Version Force Update) --- */
-const CACHE_NAME = 'agent-ia-v1';
+const CACHE_NAME = 'nexus-agent-v5.1-force';
 const ASSETS = [
     './',
     './index.html',
@@ -8,38 +7,24 @@ const ASSETS = [
     './manifest.json',
     'https://cdn.tailwindcss.com',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-    'https://cdn.jsdelivr.net/npm/marked/marked.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-    'https://unpkg.com/react@18/umd/react.production.min.js',
-    'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-    'https://unpkg.com/@babel/standalone/babel.min.js'
+    'https://cdn.jsdelivr.net/npm/marked/marked.min.js'
 ];
 
-// 1. INSTALLATION : On force le "skipWaiting"
+// 1. Installation : Force l'attente
 self.addEventListener('install', (e) => {
-    // Cette ligne force le SW à ne pas attendre
-    self.skipWaiting(); 
-    
-    e.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-    );
+    self.skipWaiting(); // Force l'activation immédiate du nouveau SW
+    e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
 });
 
-// 2. ACTIVATION : On prend le contrôle immédiatement et on nettoie
+// 2. Activation : Nettoyage et Prise de contrôle
 self.addEventListener('activate', (e) => {
     e.waitUntil(
         Promise.all([
-            // Cette ligne permet au SW de contrôler la page ouverte immédiatement
-            self.clients.claim(), 
-            
-            // Nettoyage des vieux caches
+            self.clients.claim(), // Contrôle immédiat des pages ouvertes
             caches.keys().then((keys) => {
                 return Promise.all(
                     keys.map((key) => {
-                        if (key !== CACHE_NAME) {
-                            console.log('Nettoyage ancien cache :', key);
-                            return caches.delete(key);
-                        }
+                        if (key !== CACHE_NAME) return caches.delete(key);
                     })
                 );
             })
@@ -47,24 +32,17 @@ self.addEventListener('activate', (e) => {
     );
 });
 
-// 3. FETCH : Stratégie "Network First" pour les fichiers critiques
-// (Pour éviter d'être bloqué sur un vieux index.html)
+// 3. Fetch : Stratégie hybride
 self.addEventListener('fetch', (e) => {
-    // Si c'est une requête vers l'API ou un fichier local
     e.respondWith(
         fetch(e.request)
             .then((res) => {
-                // Si on a le réseau, on met à jour le cache et on renvoie la réponse
                 const resClone = res.clone();
                 caches.open(CACHE_NAME).then((cache) => {
-                    // On ne cache pas les appels API (POST)
                     if(e.request.method === 'GET') cache.put(e.request, resClone);
                 });
                 return res;
             })
-            .catch(() => {
-                // Si pas de réseau, on prend le cache
-                return caches.match(e.request);
-            })
+            .catch(() => caches.match(e.request))
     );
 });
